@@ -8,6 +8,13 @@
         <field name="arch" type="xml">
             <form string="Configuraci&#xF3;n Retenciones IVA Venezuela">
                 <sheet>
+                    <!-- col="1" fuerza cada grupo a ocupar el ancho completo de la
+                         hoja en vez de renderizarse 2 por fila (comportamiento por
+                         defecto de Odoo con grupos hermanos sueltos dentro de sheet),
+                         que dejaba la columna de etiquetas angosta y las hacia
+                         envolver en varias lineas, inflando la altura del formulario
+                         (pedido explicito 2026-08-20). -->
+                    <group col="1">
                     <group string="Cuentas Contables">
                         <div class="alert alert-info" role="alert">
                             Seleccione las cuentas que se usar&#xE1;n al confirmar
@@ -48,6 +55,7 @@
                                string="Sanci&#xf3;n/Comprobante (Bs)"/>
                         <field name="ve_porcentaje_omision"
                                string="% Omisi&#xf3;n (Art. 111 COT)"/>
+                    </group>
                     </group>
                 </sheet>
                 <footer>
