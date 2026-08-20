@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="ve_registrar_llamada_wizard_view_form" model="ir.ui.view">
+        <field name="name">ve.registrar.llamada.wizard.form</field>
+        <field name="model">ve.registrar.llamada.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Registrar Llamada">
+                <sheet>
+                    <field name="wh_iva_id" invisible="1"/>
+                    <group>
+                        <field name="partner_id" readonly="1"/>
+                        <field name="contacto_id" placeholder="Elegir contacto existente, o dejar vacío para uno nuevo..."/>
+                        <field name="contacto_nombre" string="Nombre del Contacto"/>
+                        <field name="phone" widget="phone"/>
+                        <field name="email" widget="email"/>
+                    </group>
+                    <field name="nota" placeholder="Motivo o resultado de la llamada (opcional)..."/>
+                </sheet>
+                <footer>
+                    <button name="action_registrar"
+                            string="Registrar Llamada"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Cancelar" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

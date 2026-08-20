@@ -1,0 +1,1002 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         DASHBOARD OPERATIVO — Semáforo, Cobranza vs. Comprobante,
+         Antigüedad de Comprobantes Vencidos, Top Clientes.
+         Uso diario: seguimiento y acción sobre comprobantes pendientes.
+    ══════════════════════════════════════════════════════════════════ -->
+    <record id="ve_dashboard_iva_view_form_operativo" model="ir.ui.view">
+        <field name="name">ve.dashboard.iva.form.operativo</field>
+        <field name="model">ve.dashboard.iva</field>
+        <field name="arch" type="xml">
+            <form string="Dashboard IVA — Operativo" create="false" delete="false">
+
+                <div class="oe_button_box" name="button_box">
+                    <button class="oe_stat_button" type="object"
+                            name="action_ver_vencidos" icon="fa-times-circle">
+                        <field name="total_vencidos" widget="statinfo" string="Vencidos"/>
+                    </button>
+                    <button class="oe_stat_button" type="object"
+                            name="action_ver_esperados" icon="fa-clock-o"
+                            title="Todos los comprobantes que aún no se han recibido, hayan vencido su plazo o no. La lista se abre ordenada por fecha límite (el más urgente primero) — para ver solo los que ya incumplieron el plazo, usa el botón 'Vencidos'.">
+                        <field name="total_esperados" widget="statinfo" string="No Recibido"/>
+                    </button>
+                    <button class="oe_stat_button" type="object"
+                            name="action_ver_borradores" icon="fa-hourglass-half">
+                        <field name="total_borrador" widget="statinfo" string="No Confirmado"/>
+                    </button>
+                    <button class="oe_stat_button" type="object"
+                            name="action_ver_periodos_abiertos" icon="fa-exclamation-triangle">
+                        <field name="total_periodos_abiertos" widget="statinfo" string="Periodo No/Declr"/>
+                    </button>
+                </div>
+
+                <div class="o_form_sheet_bg" style="background-color:#EAF1FB; max-width:100%; margin:0;">
+                    <div class="o_form_sheet" style="max-width:100%;">
+
+                        <!-- ══ Semáforo Operativo ═══════════════════════════════ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3 mt-2">
+                            Sem&#xe1;foro Operativo —
+                            <span class="text-dark fw-normal fs-6">
+                                <field name="periodo_activo_name" readonly="1" nolabel="1"/>
+                            </span>
+                        </h5>
+                        <div class="row g-3 mb-4">
+                            <!-- Días al cierre -->
+                            <div class="col-lg-4 col-md-4">
+                                <div class="card h-100 shadow-sm border-0">
+                                    <div class="card-body p-2 d-flex align-items-center gap-2">
+                                        <span class="badge text-bg-success" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
+                                              invisible="dias_cierre_quincena &lt; 2">&#x2713;</span>
+                                        <span class="badge text-bg-warning" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
+                                              invisible="dias_cierre_quincena &lt; 0 or dias_cierre_quincena &gt;= 2">!</span>
+                                        <span class="badge text-bg-danger" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
+                                              invisible="dias_cierre_quincena &gt;= 0">&#x2717;</span>
+                                        <div>
+                                            <div class="small text-muted">D&#xed;as para cierre de quincena</div>
+                                            <div class="fw-bold">
+                                                <field name="dias_cierre_quincena" readonly="1" nolabel="1"/>
+                                                <span invisible="dias_cierre_quincena &lt; -10"> d&#xed;as</span>
+                                                <span invisible="dias_cierre_quincena &gt;= -10"> —</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Comprobantes confirmados -->
+                            <div class="col-lg-4 col-md-4">
+                                <div class="card h-100 shadow-sm border-0">
+                                    <div class="card-body p-2 d-flex align-items-center gap-2">
+                                        <span class="badge text-bg-success" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
+                                              invisible="pct_retenciones_ok &lt; 100">&#x2713;</span>
+                                        <span class="badge text-bg-warning" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
+                                              invisible="pct_retenciones_ok &lt; 50 or pct_retenciones_ok &gt;= 100">!</span>
+                                        <span class="badge text-bg-danger" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
+                                              invisible="pct_retenciones_ok &gt;= 50 or retenciones_total == 0">&#x2717;</span>
+                                        <span class="badge text-bg-secondary" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
+                                              invisible="retenciones_total &gt; 0">—</span>
+                                        <div class="flex-grow-1">
+                                            <div class="small text-muted">
+                                                <span invisible="estado_conciliacion_periodo == 'Declarado SENIAT'">Comprobantes confirmados en el per&#xed;odo</span>
+                                                <span invisible="estado_conciliacion_periodo != 'Declarado SENIAT'">Comprobantes declarados</span>
+                                            </div>
+                                            <div class="fw-bold">
+                                                <field name="retenciones_ok" readonly="1" nolabel="1"/>
+                                                <span> / </span>
+                                                <field name="retenciones_total" readonly="1" nolabel="1"/>
+                                                <span invisible="retenciones_total == 0">
+                                                    (<field name="pct_retenciones_ok" readonly="1" nolabel="1"/>%)
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <button type="object" name="action_ver_confirmados_periodo"
+                                                class="btn btn-sm btn-link p-0" title="Ver comprobantes del per&#xed;odo">
+                                            <i class="fa fa-chevron-right"/>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Estado conciliación SENIAT -->
+                            <div class="col-lg-4 col-md-4">
+                                <div class="card h-100 shadow-sm border-0">
+                                    <div class="card-body p-2 d-flex align-items-center gap-2">
+                                        <span class="badge text-bg-success" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
+                                              invisible="estado_conciliacion_periodo not in ('Conciliaci&#xf3;n Aprobada', 'Declarado SENIAT')">&#x2713;</span>
+                                        <span class="badge text-bg-warning" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
+                                              invisible="estado_conciliacion_periodo in ('Conciliaci&#xf3;n Aprobada', 'Declarado SENIAT', '')">!</span>
+                                        <span class="badge text-bg-secondary" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
+                                              invisible="estado_conciliacion_periodo != ''">—</span>
+                                        <div class="flex-grow-1">
+                                            <div class="small text-muted"
+                                                 invisible="estado_conciliacion_periodo == 'Declarado SENIAT'">Estado conciliaci&#xf3;n SENIAT</div>
+                                            <div class="fw-bold">
+                                                <field name="estado_conciliacion_periodo" readonly="1" nolabel="1"/>
+                                            </div>
+                                        </div>
+                                        <button type="object" name="action_ver_conciliacion_periodo"
+                                                class="btn btn-sm btn-link p-0" title="Ver conciliaci&#xf3;n del per&#xed;odo">
+                                            <i class="fa fa-chevron-right"/>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ══ Cobranza vs. Comprobante — Exposición Actual ═══════ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3"
+                            title="Cruza el estado de pago de la factura con la recepción del comprobante. 'Pagado sin comprobante' es el riesgo real: el cliente ya pagó (Art. 13) pero el comprobante de retención no ha llegado. Tarjetas de monto/conteo: período activo. Top clientes: backlog global.">
+                            Cobranza vs. Comprobante
+                            <span class="fw-normal fs-6 text-secondary">— Exposici&#xf3;n Actual</span>
+                        </h5>
+                        <div class="row g-3 mb-3">
+                            <div class="col-lg-4 col-md-6">
+                                <div class="card h-100 shadow-sm border-0" style="border-left: 4px solid #dc3545;">
+                                    <div class="card-body">
+                                        <div class="small text-muted">Cr&#xe9;dito Fiscal en Tr&#xe1;nsito</div>
+                                        <div class="fs-3 fw-bold" style="color:#dc3545;">
+                                            Bs.<field name="cobranza_en_transito_bs" readonly="1" nolabel="1"/>
+                                        </div>
+                                        <div class="small text-muted mt-1">Retenido, pagado, sin comprobante</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-4 col-md-6">
+                                <div class="card h-100 shadow-sm border-0" style="border-left: 4px solid #CD9924;">
+                                    <div class="card-body d-flex align-items-start justify-content-between">
+                                        <div>
+                                            <div class="small text-muted"># Facturas Pagadas sin Comprobante</div>
+                                            <div class="fs-3 fw-bold" style="color:#CD9924;">
+                                                <field name="cobranza_en_transito_count" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="small text-muted mt-1">
+                                                de <field name="cobranza_total_periodo_count" readonly="1" nolabel="1"/> retenciones del per&#xed;odo
+                                            </div>
+                                        </div>
+                                        <button type="object" name="action_ver_pagado_sin_comprobante_periodo"
+                                                class="btn btn-sm btn-link p-0" title="Ver facturas">
+                                            <i class="fa fa-chevron-right"/>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-4 col-md-12">
+                                <div class="card h-100 shadow-sm border-0">
+                                    <div class="card-body d-flex align-items-center gap-3">
+                                        <field name="cobranza_gauge_html" readonly="1" nolabel="1"/>
+                                        <div class="small text-muted">
+                                            <div>% del cr&#xe9;dito del per&#xed;odo a&#xfa;n en tr&#xe1;nsito</div>
+                                            <div class="mt-1">Total cr&#xe9;dito: <span class="fw-bold text-dark">Bs.<field name="cobranza_total_periodo_bs" readonly="1" nolabel="1"/></span></div>
+                                            <div>Cr&#xe9;dito en tr&#xe1;nsito: <span class="fw-bold" style="color:#dc3545;">Bs.<field name="cobranza_en_transito_bs" readonly="1" nolabel="1"/></span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Doble riesgo: vencido Y ya pagado por el cliente, a la vez -->
+                        <div class="alert alert-danger d-flex align-items-center justify-content-between py-2 mb-3"
+                             role="alert"
+                             invisible="cobranza_doble_riesgo_count == 0"
+                             title="Comprobantes cuyo plazo legal ya venció Y cuyo cliente ya pagó la factura — el caso más urgente: hay flujo de caja ya ocurrido y además incumplimiento del plazo Art. 16.">
+                            <span>
+                                <i class="fa fa-exclamation-triangle" title="Advertencia"/>
+                                <b>Doble riesgo:</b>
+                                <field name="cobranza_doble_riesgo_count" readonly="1" nolabel="1"/> comprobante(s) vencido(s) y ya pagado(s) sin comprobante — Bs.<field name="cobranza_doble_riesgo_bs" readonly="1" nolabel="1"/>
+                            </span>
+                            <button type="object" name="action_ver_doble_riesgo"
+                                    class="btn btn-sm btn-danger" string="Ver"/>
+                        </div>
+
+                        <!-- ══ Crédito del Período por Estado ═══════════════════ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3"
+                            title="Desglose EXCLUYENTE del Total Crédito del Período por estado del ciclo de vida del comprobante (no es lo mismo que Cobranza vs. Comprobante, que cruza con el pago de la factura — un comprobante puede ser 'Vencido' aquí y 'En Tránsito' allá al mismo tiempo).">
+                            Cr&#xe9;dito del Per&#xed;odo por Estado
+                        </h5>
+                        <div class="card shadow-sm border-0 mb-4">
+                            <div class="card-body">
+                                <field name="estado_periodo_bar_html" readonly="1" nolabel="1"/>
+                            </div>
+                        </div>
+
+                        <!-- ══ Antigüedad de Comprobantes Vencidos + Top Clientes (2 col) ═ -->
+                        <div class="row g-3 mb-4 align-items-stretch">
+                            <div class="col-lg-6 d-flex flex-column">
+                                <h5 class="fw-bold text-uppercase text-muted mb-3"
+                                    title="Comprobantes cuya fecha límite de entrega (Art. 16) ya venció y aún no se reciben, agrupados por cuántos días llevan vencidos. Antigüedad global — incluye comprobantes de cualquier período, no solo el activo. Prioriza por monto en riesgo, no por cantidad. Cada barra es clickable.">
+                                    Antig&#xfc;edad de Comprobantes Vencidos
+                                </h5>
+                                <div class="card shadow-sm border-0 flex-grow-1 d-flex flex-column">
+                                    <div class="card-body d-flex flex-column flex-grow-1">
+                                        <div class="d-flex align-items-end flex-grow-1">
+                                            <button type="object" name="action_ver_aging_0_15"
+                                                    class="btn btn-link p-0 text-decoration-none flex-fill">
+                                                <field name="aging_bar_0_15_html" readonly="1" nolabel="1"/>
+                                            </button>
+                                            <button type="object" name="action_ver_aging_16_30"
+                                                    class="btn btn-link p-0 text-decoration-none flex-fill">
+                                                <field name="aging_bar_16_30_html" readonly="1" nolabel="1"/>
+                                            </button>
+                                            <button type="object" name="action_ver_aging_31_mas"
+                                                    class="btn btn-link p-0 text-decoration-none flex-fill">
+                                                <field name="aging_bar_31_mas_html" readonly="1" nolabel="1"/>
+                                            </button>
+                                        </div>
+                                        <div class="d-flex justify-content-between align-items-center border-top mt-3 pt-2">
+                                            <span class="small fw-bold">Total en riesgo</span>
+                                            <span class="small fw-bold">
+                                                <field name="aging_total_count" readonly="1" nolabel="1"/> comp. — Bs.<field name="aging_total_bs" readonly="1" nolabel="1"/>
+                                            </span>
+                                        </div>
+                                        <div class="row g-2 align-items-center border-top mt-2 pt-2">
+                                            <div class="col-4">
+                                                <div class="small text-muted mb-1">Composici&#xf3;n del riesgo</div>
+                                                <field name="aging_bar_html" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="col-4 text-center"
+                                                 title="Monto vencido sobre el Débito Fiscal (Campo 49) — misma referencia que usa Cascada de Liquidez. Verde &lt; 10%, naranja 10-25%, rojo &#8805; 25%.">
+                                                <div class="small text-muted text-uppercase mb-1">Impacto Per&#xed;odo</div>
+                                                <field name="aging_meter_periodo_html" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="col-4 text-center">
+                                                <div class="small text-muted text-uppercase mb-1">Impacto Ene-Jun 2026</div>
+                                                <field name="aging_meter_ytd_html" readonly="1" nolabel="1"/>
+                                            </div>
+                                        </div>
+                                        <div class="mt-auto pt-2 border-top">
+                                            <button type="object" name="action_ver_vencidos"
+                                                    class="btn btn-sm btn-outline-danger"
+                                                    string="Ver Detalle"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-6 d-flex flex-column">
+                                <h5 class="fw-bold text-uppercase text-muted mb-3"
+                                    title="Clientes con mayor monto pendiente de comprobante, sobre el backlog global (no solo el período activo).">
+                                    Top Clientes con Comprobantes Pendientes
+                                </h5>
+                                <div class="card shadow-sm border-0 flex-grow-1 d-flex flex-column">
+                                    <div class="card-body d-flex flex-column flex-grow-1">
+                                        <div class="small text-muted mb-2" style="text-transform:none;">(backlog global)</div>
+                                        <field name="top_clientes_html" readonly="1" nolabel="1"/>
+                                        <div class="small text-muted mt-2">
+                                            Concentraci&#xf3;n top 3: <span class="fw-bold text-dark"><field name="pct_concentracion_top3" readonly="1" nolabel="1"/>%</span> del monto pendiente
+                                        </div>
+                                        <div class="mt-auto pt-2">
+                                            <button type="object" name="action_ver_pagado_sin_comprobante"
+                                                    class="btn btn-sm btn-outline-danger"
+                                                    string="Ver Detalle por Cliente"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ══ Retenciones Pendientes por Zona ══════════════════ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3"
+                            title="Monto y cantidad pendiente de recuperar (Esperado+Vencido), por Zona/Planta — backlog global, no solo el período activo. % Vencido indica dónde enfocar el seguimiento primero.">
+                            Retenciones Pendientes por Zona
+                        </h5>
+                        <div class="card shadow-sm border-0 mb-4">
+                            <div class="card-body">
+                                <field name="zona_pendiente_html" readonly="1" nolabel="1"/>
+                                <div class="mt-2">
+                                    <button type="object" name="action_ver_zona_pendiente"
+                                            class="btn btn-sm btn-outline-danger"
+                                            string="Ver Detalle por Zona"/>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ══ Lista de Trabajo ═════════════════════════════════ -->
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="fw-bold text-uppercase text-muted mb-0"
+                                title="Comprobantes con al menos un recordatorio disponible (envío pendiente, diferencia con SENIAT, o falta reportar) — ordenados por urgencia (fecha límite más próxima primero). Mismos botones/condiciones que Visual IVA Clientes. Muestra máximo 10 — use &quot;Ver todos&quot; si hay más.">
+                                Lista de Trabajo
+                            </h5>
+                            <button name="action_ver_lista_trabajo_completa" type="object"
+                                    string="Ver todos →" class="btn-link p-0"
+                                    title="Abre todas las retenciones No Recibidas (esperado/vencido), sin el límite de 10 de esta tarjeta"/>
+                        </div>
+                        <div class="card shadow-sm border-0 mb-4">
+                            <div class="card-body p-0">
+                                <field name="lista_trabajo_ids" nolabel="1">
+                                    <list create="false" delete="false" edit="false" open="false"
+                                          decoration-danger="estado_recepcion == 'vencido'"
+                                          decoration-info="estado_recepcion == 'esperado'">
+                                        <field name="partner_id" string="Cliente"/>
+                                        <field name="invoice_name" string="Factura"/>
+                                        <field name="nro_control" string="N&#xB0; Control" optional="hide"/>
+                                        <field name="payment_state" string="Estado Pago" widget="badge"
+                                               decoration-success="payment_state == 'paid'"
+                                               decoration-info="payment_state == 'in_payment'"
+                                               decoration-warning="payment_state == 'partial'"
+                                               decoration-muted="payment_state == 'not_paid'"/>
+                                        <field name="monto_retenido" string="Monto" sum="Total"/>
+                                        <field name="periodo_retencion" string="Per&#xED;odo"/>
+                                        <field name="fecha_vencimiento_entrega" string="Fecha L&#xED;mite"/>
+                                        <field name="fecha_ultimo_recordatorio" string="&#xDA;ltimo Recordatorio"/>
+                                        <field name="fecha_ultima_llamada" string="&#xDA;ltima Llamada"/>
+                                        <field name="estado_recepcion" string="Recepci&#xf3;n" widget="badge"
+                                               decoration-muted="estado_recepcion == 'esperado'"
+                                               decoration-info="estado_recepcion in ('recibido', 'recibido_dif')"
+                                               decoration-success="estado_recepcion in ('confirmado', 'confirmado_dif')"
+                                               decoration-warning="estado_recepcion == 'vencido'"
+                                               decoration-danger="estado_recepcion == 'anulado'"/>
+                                        <field name="estado_conciliacion" string="Conciliaci&#xf3;n SENIAT" widget="badge"
+                                               decoration-muted="estado_conciliacion in ('pendiente', 'solo_odoo', 'solo_seniat')"
+                                               decoration-warning="estado_conciliacion == 'diferencia'"
+                                               decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                                               decoration-success="estado_conciliacion in ('listo_declarar', 'conciliada', 'declarado', 'aprobado_declarar')"/>
+                                        <field name="estado_declaracion" string="Declaraci&#xf3;n" widget="badge"
+                                               decoration-muted="estado_declaracion == 'no_declarado'"
+                                               decoration-success="estado_declaracion == 'declarado'"/>
+                                        <button name="action_abrir_form"
+                                                string="Abrir" type="object" icon="fa-external-link"
+                                                class="btn-sm btn-link" title="Abrir comprobante"/>
+                                        <button name="action_abrir_registrar_llamada"
+                                                type="object" icon="fa-phone"
+                                                class="btn-sm btn-outline-primary"
+                                                title="Registrar llamada al contacto"/>
+                                        <button name="action_recordatorio_envio_comp"
+                                                type="object" icon="fa-envelope"
+                                                class="btn-sm btn-secondary"
+                                                title="Pedir env&#xED;o del comprobante"
+                                                invisible="not necesita_envio_comp"/>
+                                        <button name="action_recordatorio_dif_seniat"
+                                                type="object" icon="fa-exclamation-triangle"
+                                                class="btn-sm btn-warning"
+                                                title="Aclarar diferencia de monto con SENIAT"
+                                                invisible="not necesita_aclarar_dif_seniat"/>
+                                        <button name="action_recordatorio_rep_seniat"
+                                                type="object" icon="fa-flag"
+                                                class="btn-sm btn-danger"
+                                                title="El agente debe reportar la retenci&#xF3;n a SENIAT"
+                                                invisible="not necesita_reportar_seniat"/>
+                                    </list>
+                                </field>
+                            </div>
+                        </div>
+
+                    </div><!-- /o_form_sheet -->
+                </div><!-- /o_form_sheet_bg -->
+
+            </form>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         DASHBOARD GERENCIAL — KPIs Gerenciales, Cascada de Liquidez.
+         Uso ejecutivo: tendencias, riesgo agregado, sin acción operativa
+         directa (el drill-down abre listas, no formularios de trabajo).
+    ══════════════════════════════════════════════════════════════════ -->
+    <record id="ve_dashboard_iva_view_form_gerencial" model="ir.ui.view">
+        <field name="name">ve.dashboard.iva.form.gerencial</field>
+        <field name="model">ve.dashboard.iva</field>
+        <field name="arch" type="xml">
+            <form string="Dashboard IVA — Gerencial" create="false" delete="false">
+
+                <div class="o_form_sheet_bg" style="background-color:#EAF1FB; max-width:100%; margin:0;">
+                    <div class="o_form_sheet" style="max-width:100%;">
+
+                        <!-- ══ KPIs Gerenciales ═════════════════════════════════ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3 mt-2">KPIs Gerenciales</h5>
+                        <div class="mb-4" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
+
+                            <!-- KPI Nuevo: Posición Neta SENIAT -->
+                            <div>
+                                <div class="card h-100 shadow-sm" style="border-color:#336666;">
+                                    <div class="card-header text-white fw-bold py-2"
+                                         style="background-color:#336666;"
+                                         title="Débito Fiscal menos Créditos Fiscales menos Retenciones YA confirmadas (con comprobante). Distinta del Campo 90 oficial de la declaración, que usa todas las retenciones declaradas (incluye el monto esperado de comprobantes sin confirmar si están marcados para declarar) — esta es la lectura conservadora: qué se puede probar hoy.">
+                                        Posici&#xf3;n Neta SENIAT
+                                    </div>
+                                    <div class="card-body d-flex flex-column p-2">
+                                        <div class="row g-0 text-center mb-2" style="min-height: 100px;">
+                                            <div class="col-6 border-end">
+                                                <div class="x-small text-muted text-uppercase" style="font-size:0.7rem;">Per&#xed;odo</div>
+                                                <div class="fs-6 fw-bold" style="color:#336666;">
+                                                    <field name="posicion_neta_periodo_label" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div class="fs-6 fw-bold" style="color:#336666;">
+                                                    Bs.<field name="posicion_neta_periodo_bs" readonly="1" nolabel="1"/>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="x-small text-muted text-uppercase" style="font-size:0.7rem;">Ene-Jun 2026</div>
+                                                <div class="fs-6 fw-bold" style="color:#336666;">
+                                                    <field name="posicion_neta_ytd_label" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div class="fs-6 fw-bold" style="color:#336666;">
+                                                    Bs.<field name="posicion_neta_ytd_bs" readonly="1" nolabel="1"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="text-center text-muted" style="font-size:0.7rem;">
+                                            D&#xe9;bito &#x2212; Cr&#xe9;ditos &#x2212; Retenciones confirmadas
+                                        </div>
+                                        <div class="d-flex align-items-center gap-2 justify-content-center mt-2 pt-2 border-top"
+                                             title="No depende de esta Posición Neta — es la contraparte: cuánto crédito del período todavía NO está confirmado (No Recibido + Recibido sin Confirmar + Vencido) y qué % representa sobre el Débito Fiscal. Si se confirma, podría mover la Posición Neta de arriba.">
+                                            <field name="brecha_gauge_html" readonly="1" nolabel="1"/>
+                                            <div class="text-start" style="font-size:0.68rem;">
+                                                <div class="text-muted">Brecha pendiente de confirmar</div>
+                                                <div class="fw-bold">
+                                                    Bs.<field name="brecha_pendiente_bs" readonly="1" nolabel="1"/>
+                                                    (<field name="brecha_pendiente_count" readonly="1" nolabel="1"/> comp.)
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="mt-auto pt-2 d-flex gap-1 justify-content-center flex-wrap">
+                                            <button type="object" name="action_ver_declaracion_iva"
+                                                    class="btn btn-sm"
+                                                    style="color:#336666; border:1px solid #336666;"
+                                                    string="Ver C&#xe1;lculo"/>
+                                            <button type="object" name="action_ver_pendientes_confirmar_periodo"
+                                                    class="btn btn-sm"
+                                                    style="color:#336666; border:1px solid #336666;"
+                                                    string="Ver Pendientes"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- KPI 1: Margen C/D -->
+                            <div>
+                                <div class="card h-100 border-primary shadow-sm">
+                                    <div class="card-header bg-primary text-white fw-bold py-2"
+                                         title="Créditos Fiscales (retenciones recibidas) sobre Débito Fiscal (IVA generado). Mide qué proporción de tu débito fiscal está cubierta por créditos fiscales ya retenidos.">
+                                        Margen C/D
+                                    </div>
+                                    <div class="card-body d-flex flex-column p-2">
+                                        <!-- Dual valores -->
+                                        <div class="row g-0 text-center mb-2" style="min-height: 100px;">
+                                            <div class="col-6 border-end">
+                                                <div class="x-small text-muted text-uppercase" style="font-size:0.7rem;">Per&#xed;odo</div>
+                                                <div class="fs-4 fw-bold text-primary">
+                                                    <field name="margen_cd_periodo" readonly="1" nolabel="1"/>%
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    Créd.Fiscal: <field name="credito_fiscal_periodo" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    Déb.Fiscal: <field name="campo_49_periodo" readonly="1" nolabel="1"/>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="x-small text-muted text-uppercase" style="font-size:0.7rem;">Ene-Jun 2026</div>
+                                                <div class="fs-4 fw-bold text-primary">
+                                                    <field name="margen_cd_ytd" readonly="1" nolabel="1"/>%
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    Créd.Fiscal: <field name="credito_fiscal_ytd" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    Déb.Fiscal: <field name="campo_49_ytd" readonly="1" nolabel="1"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <field name="margen_svg_html" readonly="1" nolabel="1"/>
+                                        </div>
+                                        <div class="text-center text-muted mt-1" style="font-size:0.7rem;">
+                                            &#xfa;ltimas 6 quincenas
+                                        </div>
+                                        <div class="text-center text-muted" style="font-size:0.75rem;">
+                                            Ref: <field name="periodo_ref_name" readonly="1" nolabel="1"/>
+                                        </div>
+                                        <div class="text-center mt-2" style="font-size:0.68rem;"
+                                             invisible="c66_total_periodo_bs == 0"
+                                             title="Del crédito que se va a declarar en el período activo (Campo 66), qué % corresponde a comprobantes que aún no han sido recibidos/confirmados — declarado por el monto esperado (incluir_declaracion=True). Riesgo de tener que hacer una declaración sustitutiva si el comprobante no llega o llega con diferencia.">
+                                            <div class="text-muted">Declarado sin comprobante confirmado (per&#237;odo activo)</div>
+                                            <span class="fw-bold" style="color:#dc3545;"><field name="pct_c66_sin_confirmar_periodo" readonly="1" nolabel="1"/>%</span>
+                                            <span class="text-muted">— Bs.<field name="c66_sin_confirmar_periodo_bs" readonly="1" nolabel="1"/></span>
+                                        </div>
+                                        <div class="mt-auto pt-2 d-flex gap-1 justify-content-center flex-wrap">
+                                            <button type="object" name="action_ver_declaracion_iva"
+                                                    class="btn btn-sm btn-primary"
+                                                    string="Declaraci&#xf3;n IVA"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- KPI 2: Tasa Efectiva -->
+                            <div>
+                                <div class="card h-100 shadow-sm" style="border-color:#5b9a55;">
+                                    <div class="card-header text-white fw-bold py-2"
+                                         style="background-color:#5b9a55;"
+                                         title="Porcentaje de retenciones ya confirmadas con comprobante físico sobre el IVA retenido esperado. Excluye facturas cuyo plazo legal de entrega (Art. 16) todavía no vence — antes de esa fecha no es incumplimiento, es normal. Mide la eficiencia real de recuperación de comprobantes, no ruido de calendario.">
+                                        Tasa Efectiva Retenci&#xf3;n
+                                    </div>
+                                    <div class="card-body d-flex flex-column p-2">
+                                        <div class="row g-0 text-center mb-2" style="min-height: 100px;">
+                                            <div class="col-6 border-end">
+                                                <div style="font-size:0.7rem;" class="text-muted text-uppercase">Per&#xed;odo</div>
+                                                <div class="fs-4 fw-bold" style="color:#5b9a55;">
+                                                    <field name="tasa_ef_periodo" readonly="1" nolabel="1"/>%
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    Retenido: <field name="tasa_ef_retenido_periodo" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    IVA Causado: <field name="tasa_ef_causado_periodo" readonly="1" nolabel="1"/>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div style="font-size:0.7rem;" class="text-muted text-uppercase">Ene-Jun 2026</div>
+                                                <div class="fs-4 fw-bold" style="color:#5b9a55;">
+                                                    <field name="tasa_ef_ytd" readonly="1" nolabel="1"/>%
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    Retenido: <field name="tasa_ef_retenido_ytd" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    IVA Causado: <field name="tasa_ef_causado_ytd" readonly="1" nolabel="1"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <field name="tasa_svg_html" readonly="1" nolabel="1"/>
+                                        </div>
+                                        <div class="text-center text-muted mt-1" style="font-size:0.7rem;">
+                                            &#xfa;ltimas 6 quincenas
+                                        </div>
+                                        <div class="text-center text-muted" style="font-size:0.75rem;">
+                                            Retenido / IVA Causado
+                                        </div>
+                                        <div class="mt-auto pt-2 text-center">
+                                            <button type="object" name="action_ver_retenciones_anio"
+                                                    class="btn btn-sm"
+                                                    style="color:#5b9a55; border:1px solid #5b9a55;"
+                                                    string="Ver Retenciones"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- KPI 3: Cumplimiento SPE -->
+                            <div>
+                                <div class="card h-100 border-warning shadow-sm">
+                                    <div class="card-header bg-warning fw-bold py-2"
+                                         title="Porcentaje de períodos declarados dentro del plazo legal (≤ 7 días posteriores al cierre de la quincena).">
+                                        Puntualidad Fiscal
+                                    </div>
+                                    <div class="card-body d-flex flex-column p-2">
+                                        <div class="row g-0 text-center mb-2" style="min-height: 100px;">
+                                            <div class="col-6 border-end">
+                                                <div style="font-size:0.7rem;" class="text-muted text-uppercase">4 Quincenas</div>
+                                                <div class="fs-4 fw-bold text-warning">
+                                                    <field name="pct_cumpl_4q" readonly="1" nolabel="1"/>%
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    <field name="periodos_en_plazo_4q" readonly="1" nolabel="1"/>/<field name="periodos_eval_4q" readonly="1" nolabel="1"/>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div style="font-size:0.7rem;" class="text-muted text-uppercase">12 Meses</div>
+                                                <div class="fs-4 fw-bold text-warning">
+                                                    <field name="pct_cumpl_12m" readonly="1" nolabel="1"/>%
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    <field name="periodos_en_plazo_12m" readonly="1" nolabel="1"/>/<field name="periodos_eval_12m" readonly="1" nolabel="1"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <field name="cumpl_svg_html" readonly="1" nolabel="1"/>
+                                        </div>
+                                        <div class="text-center text-muted mt-1" style="font-size:0.7rem;">
+                                            &#xfa;ltimas 6 quincenas
+                                        </div>
+                                        <div class="text-center text-muted" style="font-size:0.75rem;">
+                                            Per&#xed;odos declarados en plazo (≤ 7 d&#xed;as del cierre)
+                                        </div>
+                                        <div class="mt-auto pt-2 text-center">
+                                            <button type="object" name="action_ver_periodos_cumplimiento"
+                                                    class="btn btn-sm btn-outline-warning"
+                                                    string="Ver Per&#xed;odos"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- KPI 4: Sanciones (Pendientes vs Impugnadas, Bs actualizado + EUR) -->
+                            <div>
+                                <div class="card h-100 shadow-sm" style="border-color:#b5474d;">
+                                    <div class="card-header text-white fw-bold py-2"
+                                         style="background-color:#b5474d;"
+                                         title="Sanciones tributarias en estado Pendiente o Impugnada durante el año en curso. La multa se fija en la moneda de mayor valor BCV (normalmente EUR, Art. 96/98/108 COT) y el monto en Bs se recalcula con la tasa vigente al momento de ver el tablero, hasta el día en que se paga. No incluye sanciones pagadas ni prescritas.">
+                                        Sanciones A&#xf1;o
+                                    </div>
+                                    <div class="card-body d-flex flex-column p-2">
+                                        <div class="row g-0 text-center mb-2" style="min-height: 100px;">
+                                            <div class="col-6 border-end">
+                                                <div class="x-small text-muted text-uppercase" style="font-size:0.7rem;">Pendientes</div>
+                                                <div class="fs-6 fw-bold" style="color:#b5474d;">
+                                                    Bs.<field name="sancion_pend_bs" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    &#8364;<field name="sancion_pend_eur" readonly="1" nolabel="1"/>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="x-small text-muted text-uppercase" style="font-size:0.7rem;">Impugnadas</div>
+                                                <div class="fs-6 fw-bold" style="color:#d6a13a;">
+                                                    Bs.<field name="sancion_impu_bs" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    &#8364;<field name="sancion_impu_eur" readonly="1" nolabel="1"/>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <field name="sanciones_bars_html" readonly="1" nolabel="1"/>
+                                        </div>
+                                        <div class="text-center text-muted mt-1" style="font-size:0.7rem;">
+                                            a&#xf1;o en curso
+                                        </div>
+                                        <div class="text-center fw-bold" style="font-size:0.75rem;">
+                                            Total: Bs.<field name="total_sanciones_ano_bs" readonly="1" nolabel="1"/>
+                                            &#160;/&#160;
+                                            &#8364;<field name="total_sanciones_ano_eur" readonly="1" nolabel="1"/>
+                                        </div>
+                                        <div class="mt-auto pt-2 d-flex gap-1 justify-content-center flex-wrap">
+                                            <button type="object" name="action_ver_sanciones_anio"
+                                                    class="btn btn-sm"
+                                                    style="color:#b5474d; border:1px solid #b5474d;"
+                                                    string="Ver Sanciones"/>
+                                            <button type="object" name="action_estimar_riesgo"
+                                                    class="btn btn-sm text-white"
+                                                    style="background-color:#b5474d;"
+                                                    string="Estimar Riesgo"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div><!-- /row KPIs -->
+
+                        <!-- ══ Cascada de Liquidez (Período + Ene-Jun 2026) ════════════ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3">
+                            Cascada de Liquidez
+                            <span class="fw-normal fs-6 text-secondary">— Per&#xed;odo Activo y Acumulado (Ene-Jun 2026)</span>
+                        </h5>
+                        <div class="card shadow-sm border-0">
+                            <div class="card-body">
+                                <!-- Encabezado de columnas -->
+                                <div class="row g-0 mb-2 text-center">
+                                    <div class="col-md-4"/>
+                                    <div class="col-md-4">
+                                        <span class="small fw-bold text-muted text-uppercase">Per&#xed;odo</span>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <span class="small fw-bold text-muted text-uppercase">Acum. Ene-Jun</span>
+                                    </div>
+                                </div>
+                                <!-- Fila 1: Débito Fiscal -->
+                                <div class="row g-2 align-items-center text-center mb-2">
+                                    <div class="col-md-4 text-start">
+                                        <span class="small fw-semibold text-secondary text-uppercase">D&#xe9;bito Fiscal</span>
+                                        <div class="small text-muted">Campo 49</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="rounded border border-secondary p-2">
+                                            <div class="fw-bold">
+                                                Bs.<field name="debito_fiscal_periodo" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="mt-1">
+                                                <button type="object" name="action_ver_declaracion_iva"
+                                                        class="btn btn-sm btn-outline-secondary"
+                                                        string="Ver"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="rounded border border-secondary p-2 bg-light">
+                                            <div class="fw-bold text-secondary">
+                                                Bs.<field name="debito_fiscal_cascade" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="mt-1">
+                                                <button type="object" name="action_ver_periodos_cumplimiento"
+                                                        class="btn btn-sm btn-outline-secondary"
+                                                        string="Ver"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Fila 2: Retenido c/ Comprobante -->
+                                <div class="row g-2 align-items-center text-center mb-2">
+                                    <div class="col-md-4 text-start">
+                                        <span class="small fw-semibold text-success text-uppercase">Retenciones c/Comprobante</span>
+                                        <div class="small text-muted">solo confirmado (comprobante real)</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="rounded border border-success p-2">
+                                            <div class="fw-bold text-success">
+                                                Bs.<field name="retenido_con_periodo" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="small text-success">
+                                                <field name="pct_recuperado_periodo" readonly="1" nolabel="1"/>%
+                                            </div>
+                                            <div class="mt-1">
+                                                <button type="object" name="action_ver_retenciones_con_comprobante_periodo"
+                                                        class="btn btn-sm btn-outline-success"
+                                                        string="Ver"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="rounded border border-success p-2 bg-light">
+                                            <div class="fw-bold text-success">
+                                                Bs.<field name="retenido_con_comprobante" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="small text-success">
+                                                <field name="pct_recuperado" readonly="1" nolabel="1"/>%
+                                            </div>
+                                            <div class="mt-1">
+                                                <button type="object" name="action_ver_retenciones_con_comprobante"
+                                                        class="btn btn-sm btn-outline-success"
+                                                        string="Ver"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Fila 3: Posición Neta SENIAT (mismo cálculo que la tarjeta KPI) -->
+                                <div class="row g-2 align-items-center text-center mt-2">
+                                    <div class="col-md-4 text-start">
+                                        <span class="small fw-semibold text-uppercase" style="color:#336666;">Posici&#xf3;n Neta SENIAT</span>
+                                        <div class="small text-muted">D&#xe9;bito &#x2212; Cr&#xe9;ditos &#x2212; Retenciones confirmadas</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="rounded p-2" style="border:1px solid #336666;">
+                                            <div class="fw-bold" style="color:#336666;">
+                                                <field name="posicion_neta_periodo_label" readonly="1" nolabel="1"/>: Bs.<field name="posicion_neta_periodo_bs" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="mt-1">
+                                                <button type="object" name="action_ver_declaracion_iva"
+                                                        class="btn btn-sm"
+                                                        style="color:#336666; border:1px solid #336666;"
+                                                        string="Ver Declaraci&#xf3;n"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="rounded p-2 bg-light" style="border:1px solid #336666;">
+                                            <div class="fw-bold" style="color:#336666;">
+                                                <field name="posicion_neta_ytd_label" readonly="1" nolabel="1"/>: Bs.<field name="posicion_neta_ytd_bs" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="mt-1">
+                                                <button type="object" name="action_ver_declaracion_iva"
+                                                        class="btn btn-sm"
+                                                        style="color:#336666; border:1px solid #336666;"
+                                                        string="Ver Declaraci&#xf3;n"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Fila 4: Retenido s/ Comprobante — no recibido + no confirmado + vencido.
+                                     Va justo debajo de Posición Neta SENIAT: es la contraparte que todavía
+                                     podría moverla si se confirma (mismo cálculo que la ficha KPI "Brecha"). -->
+                                <div class="row g-2 align-items-center text-center mt-2">
+                                    <div class="col-md-4 text-start">
+                                        <span class="small fw-semibold text-danger text-uppercase">Retenciones s/Comprobante</span>
+                                        <div class="small text-muted">no recibido · no confirmado · vencido</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="rounded border border-danger p-2">
+                                            <div class="fw-bold text-danger">
+                                                Bs.<field name="retenido_sin_periodo" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="small text-danger">
+                                                <field name="pct_en_riesgo_periodo" readonly="1" nolabel="1"/>% (<field name="retenido_sin_periodo_count" readonly="1" nolabel="1"/> comp.)
+                                            </div>
+                                            <div class="mt-1">
+                                                <button type="object" name="action_ver_retenciones_en_riesgo_periodo"
+                                                        class="btn btn-sm btn-outline-danger"
+                                                        string="Ver En Riesgo"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="rounded border border-danger p-2 bg-light">
+                                            <div class="fw-bold text-danger">
+                                                Bs.<field name="retenido_sin_comprobante" readonly="1" nolabel="1"/>
+                                            </div>
+                                            <div class="small text-danger">
+                                                <field name="pct_en_riesgo" readonly="1" nolabel="1"/>% riesgo
+                                            </div>
+                                            <div class="mt-1">
+                                                <button type="object" name="action_ver_retenciones_en_riesgo"
+                                                        class="btn btn-sm btn-outline-danger"
+                                                        string="Ver En Riesgo"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ══ Excedente de Crédito Fiscal Acumulado ═══════════ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3 mt-4"
+                            title="C.60 (excedente de crédito fiscal para el período siguiente) de la Declaración IVA del período activo — el mismo que se auto-copia como C.20 del período siguiente. No incluye el arrastre de retenciones no descontadas (C.54), que es un pozo legal aparte. Antigüedad promedio y erosión por tasa BCV quedan pendientes de instrumentación (requieren reconstruir históricamente cuándo se generó cada capa del excedente).">
+                            Excedente de Cr&#xe9;dito Fiscal Acumulado con SENIAT
+                        </h5>
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <div class="card h-100 shadow-sm border-0 text-center">
+                                    <div class="card-body">
+                                        <div class="small text-muted">Excedente trasladable actual</div>
+                                        <div class="fs-4 fw-bold" style="color:#336666;">
+                                            Bs.<field name="excedente_trasladable_bs" readonly="1" nolabel="1"/>
+                                        </div>
+                                        <div class="small text-muted">C.60 &#8212; <field name="excedente_periodo_ref_name" readonly="1" nolabel="1"/></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card h-100 shadow-sm border-0 text-center">
+                                    <div class="card-body">
+                                        <div class="small text-muted">Tendencia vs. per&#xed;odo anterior</div>
+                                        <div class="fs-4 fw-bold"
+                                             style="color:#dc3545;"
+                                             invisible="excedente_tendencia_pct &lt;= 0">
+                                            &#8593; <field name="excedente_tendencia_pct" readonly="1" nolabel="1"/>%
+                                        </div>
+                                        <div class="fs-4 fw-bold"
+                                             style="color:#198754;"
+                                             invisible="excedente_tendencia_pct &gt; 0">
+                                            &#8595; <field name="excedente_tendencia_pct" readonly="1" nolabel="1"/>%
+                                        </div>
+                                        <div class="small text-muted">crecimiento del excedente</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ══ Conciliación de Datos vs. SENIAT ═══════════════ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3"
+                            title="6 categorías: Conciliada (coincide SmartIVA/SENIAT), Solo SmartIVA (el agente no reportó a SENIAT), Solo SENIAT (no registrado en SmartIVA), Diferencia de monto, Sin Conciliar (comprobante de SmartIVA sin procesar contra SENIAT), Sin Procesar SENIAT (registro SENIAT cargado pero nadie corrió Conciliar SENIAT sobre él todavía). La confiabilidad de Posición Neta SENIAT y Excedente Acumulado depende de este %. Cada categoría (salvo Solo SENIAT y Sin Procesar SENIAT, que no existen como registro en SmartIVA) se puede abrir agrupada por Zona/Planta.">
+                            Conciliaci&#xf3;n de Datos vs. SENIAT
+                        </h5>
+                        <div class="row g-3 mb-4">
+                            <div class="col-6">
+                                <div class="card shadow-sm border-0 h-100">
+                                    <div class="card-body">
+                                        <div class="small fw-bold text-uppercase text-muted mb-2">Per&#xed;odo Activo</div>
+                                        <field name="concil_bar_html" readonly="1" nolabel="1"/>
+                                        <div class="d-flex flex-wrap gap-2 mt-2">
+                                            <button type="object" name="action_ver_concil_conciliada"
+                                                    class="btn btn-sm btn-link p-0" string="Conciliadas"/>
+                                            <button type="object" name="action_ver_concil_solo_odoo"
+                                                    class="btn btn-sm btn-link p-0" string="Solo SmartIVA"/>
+                                            <button type="object" name="action_ver_concil_diferencia"
+                                                    class="btn btn-sm btn-link p-0" string="Diferencia"/>
+                                            <button type="object" name="action_ver_concil_sin_conciliar"
+                                                    class="btn btn-sm btn-link p-0" string="Sin Conciliar"/>
+                                        </div>
+                                        <div class="mt-2">
+                                            <button type="object" name="action_ver_conciliacion_periodo"
+                                                    class="btn btn-sm"
+                                                    style="color:#336666; border:1px solid #336666;"
+                                                    string="Conciliar Ahora"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="card shadow-sm border-0 h-100">
+                                    <div class="card-body">
+                                        <div class="small fw-bold text-uppercase text-muted mb-2">Acumulado Ene-Jun 2026</div>
+                                        <field name="concil_bar_html_ytd" readonly="1" nolabel="1"/>
+                                        <div class="d-flex flex-wrap gap-2 mt-2">
+                                            <button type="object" name="action_ver_concil_conciliada_ytd"
+                                                    class="btn btn-sm btn-link p-0" string="Conciliadas"/>
+                                            <button type="object" name="action_ver_concil_solo_odoo_ytd"
+                                                    class="btn btn-sm btn-link p-0" string="Solo SmartIVA"/>
+                                            <button type="object" name="action_ver_concil_diferencia_ytd"
+                                                    class="btn btn-sm btn-link p-0" string="Diferencia"/>
+                                            <button type="object" name="action_ver_concil_sin_conciliar_ytd"
+                                                    class="btn btn-sm btn-link p-0" string="Sin Conciliar"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ══ RESUMEN Ene-Jun 2026 ══ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3">RESUMEN Ene-Jun 2026</h5>
+                        <div class="card shadow-sm border-0 mb-4">
+                            <div class="card-body">
+                                <div class="row align-items-end">
+                                    <div class="col-lg-7 col-md-6 border-end">
+                                        <div class="small text-muted text-uppercase text-center mb-2"
+                                             style="font-size:0.68rem;"
+                                             title="Por categoría, sumado en todo 2026: Retenciones Esperadas (cálculo legal real de SmartIVA por factura), Recibido (con comprobante confirmado), Pendiente por Recibir, Declarado, Total SENIAT y Conciliado.">
+                                            Esperadas / Recibido / Pendiente / Declarado / SENIAT / Conciliado (2026)
+                                        </div>
+                                        <div class="d-flex align-items-end justify-content-center" style="overflow-x:auto;">
+                                            <field name="resumen_ytd_bars_html" readonly="1" nolabel="1"/>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-5 col-md-6">
+                                        <div class="small text-muted text-uppercase text-center mb-2"
+                                             style="font-size:0.68rem;"
+                                             title="Retenciones que el propio SENIAT ya confirmó a favor del cliente, pero que nunca se vincularon a ningún registro de SmartIVA — crédito fiscal real que probablemente no sabía que tenía.">
+                                            Crédito Fiscal SENIAT sin match
+                                        </div>
+                                        <div class="d-flex align-items-end justify-content-center gap-4 flex-wrap">
+                                            <field name="seniat_match_bars_html" readonly="1" nolabel="1"/>
+                                            <div class="text-center">
+                                                <div class="small text-muted text-uppercase" style="font-size:0.72rem;">
+                                                    Sin match en tus registros
+                                                </div>
+                                                <div class="fw-bold" style="font-size:2rem; color:#eb6834;">
+                                                    Bs.<field name="solo_seniat_ytd_bs" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div class="text-muted" style="font-size:0.7rem;">
+                                                    de Bs.<field name="seniat_total_bs" readonly="1" nolabel="1"/> confirmados por SENIAT
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ══ IOC / TAC / BDS — universo PROYECCIÓN (Base = Retenciones Esperadas Ene-Jun 2026) ══ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3"
+                            title="Sobre la Base de Retenciones Esperadas Ene-Jun 2026 (cálculo legal real de SmartIVA por factura, 75%/100% según N° de Control -- no una tasa fija), IOC = % con comprobante recibido, TAC = % declarado/aprovechado como crédito fiscal, BDS = % que el portal SENIAT ya confirma.">
+                            Índices IOC / TAC / BDS — Proyección (2026)
+                        </h5>
+                        <div class="card shadow-sm border-0 mb-4">
+                            <div class="card-body">
+                                <field name="ioc_tac_bds_html" readonly="1" nolabel="1"/>
+                            </div>
+                        </div>
+
+                        <!-- ══ Retenciones Esperadas / Recibido / Pendiente / Declarado / SENIAT / Conciliado — año en curso ══ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3"
+                            title="Por mes de 2026: Retenciones Esperadas (cálculo legal real de SmartIVA por factura -- 75%/100% según N° de Control, ver _serie_valor_estimado -- pueden estar en cualquier estado), Recibido (con comprobante confirmado), Pendiente por Recibir, Declarado, Total SENIAT y Conciliado (del Pendiente, cuánto ya confirmó SENIAT aunque el papel no haya llegado). Pase el mouse sobre cada barra para el monto exacto de ese mes -- pensado para validar contra el Excel de Cementos (Consolidado Ene-Jun 2026, hoja Analisis).">
+                            Retenciones Esperadas / Recibido / Pendiente / Declarado / SENIAT / Conciliado (2026)
+                        </h5>
+                        <div class="card shadow-sm border-0 mb-4">
+                            <div class="card-body">
+                                <field name="estimado_recibido_svg_html" readonly="1" nolabel="1"/>
+                            </div>
+                        </div>
+
+                        <!-- ══ Riesgo de Sanción / Subdeclaración por mes ══ -->
+                        <h5 class="fw-bold text-uppercase text-muted mb-3"
+                            title="Por mes: si Declarado > Recibido, el excedente es Riesgo de Sanción (se declaró más de lo que se puede probar con comprobante); si Recibido > Declarado, el excedente es Subdeclaración (hay comprobante confirmado que no se declaró). Un mes cae en uno de los dos, nunca ambos.">
+                            Riesgo de Sanción / Subdeclaración
+                        </h5>
+                        <div class="card shadow-sm border-0 mb-4">
+                            <div class="card-body">
+                                <field name="riesgo_sancion_mensual_html" readonly="1" nolabel="1"/>
+                            </div>
+                        </div>
+
+                    </div><!-- /o_form_sheet -->
+                </div><!-- /o_form_sheet_bg -->
+
+            </form>
+        </field>
+    </record>
+
+    <!-- Server actions que abren cada dashboard -->
+    <record id="action_open_dashboard_iva_operativo" model="ir.actions.server">
+        <field name="name">Dashboard IVA — Operativo</field>
+        <field name="model_id" ref="model_ve_dashboard_iva"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_open_dashboard_operativo()</field>
+    </record>
+
+    <record id="action_open_dashboard_iva_gerencial" model="ir.actions.server">
+        <field name="name">Dashboard IVA — Gerencial</field>
+        <field name="model_id" ref="model_ve_dashboard_iva"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_open_dashboard_gerencial()</field>
+    </record>
+
+</odoo>

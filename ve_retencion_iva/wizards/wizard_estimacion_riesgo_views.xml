@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="ve_wizard_estimacion_riesgo_view_form" model="ir.ui.view">
+        <field name="name">ve.wizard.estimacion.riesgo.form</field>
+        <field name="model">ve.wizard.estimacion.riesgo</field>
+        <field name="arch" type="xml">
+            <form string="Estimador de Riesgo SENIAT">
+
+                <sheet>
+                    <div class="alert alert-info" role="alert">
+                        Calcula la exposici&#xf3;n m&#xe1;xima estimada ante una
+                        auditor&#xed;a SENIAT, basada en comprobantes vencidos/esperados
+                        dentro de la ventana de prescripci&#xf3;n.
+                        Los montos son <strong>estimaciones de peor caso</strong> — no son
+                        liquidaciones definitivas.
+                    </div>
+
+                    <group string="Par&#xe1;metros del C&#xe1;lculo">
+                        <group>
+                            <field name="es_agente_retencion"/>
+                            <field name="sancion_por_comprobante_bs"
+                                   string="Sanci&#xf3;n por Comprobante (Bs)"
+                                   help="Multa COT Art. 101 por cada comprobante no entregado en plazo."/>
+                            <field name="porcentaje_omision"
+                                   string="% Omisi&#xf3;n (Art. 111 COT)"/>
+                            <field name="tasa_eur_bcv"
+                                   string="Tasa EUR/BCV (Bs por EUR)"/>
+                        </group>
+                    </group>
+
+                    <div class="text-center mb-3">
+                        <button name="action_calcular" type="object"
+                                string="Calcular Riesgo" class="btn-primary"
+                                icon="fa-calculator"/>
+                    </div>
+
+                    <!-- Resultados -->
+                    <group string="Per&#xed;odos en Riesgo"
+                           invisible="not calculado">
+                        <field name="line_ids" nolabel="1">
+                            <list create="false" delete="false">
+                                <field name="periodo_name" string="Per&#xed;odo"/>
+                                <field name="n_vencidos" string="Vencidos"/>
+                                <field name="n_esperados" string="Esperados"/>
+                                <field name="sancion_ilicito_bs"
+                                       string="Il&#xed;cito Formal (Bs)" sum="Total"/>
+                                <field name="sancion_omision_bs"
+                                       string="Omisi&#xf3;n (Bs)" sum="Total"/>
+                                <field name="total_bs"
+                                       string="Total (Bs)" sum="Total"/>
+                                <field name="total_eur"
+                                       string="Total (EUR)" sum="Total"/>
+                            </list>
+                        </field>
+                    </group>
+
+                    <group invisible="not calculado">
+                        <group string="Exposici&#xf3;n Total Estimada">
+                            <field name="riesgo_total_bs" readonly="1"
+                                   string="Riesgo Total (Bs)"/>
+                            <field name="riesgo_total_eur" readonly="1"
+                                   string="Riesgo Total (EUR)"/>
+                        </group>
+                    </group>
+
+                </sheet>
+
+                <footer>
+                    <button name="action_crear_sancion" type="object"
+                            string="Crear Sanci&#xf3;n desde Estimaci&#xf3;n"
+                            class="btn-primary"
+                            invisible="not calculado or riesgo_total_bs == 0"/>
+                    <button string="Cerrar" class="btn-secondary" special="cancel"/>
+                </footer>
+
+            </form>
+        </field>
+    </record>
+
+    <!-- Acción para abrir el wizard desde el menú -->
+    <record id="ve_action_estimacion_riesgo" model="ir.actions.act_window">
+        <field name="name">Estimar Riesgo SENIAT</field>
+        <field name="res_model">ve.wizard.estimacion.riesgo</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

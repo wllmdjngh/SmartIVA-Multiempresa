@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="ve_reset_piloto_wizard_view_form" model="ir.ui.view">
+        <field name="name">ve.reset.piloto.wizard.form</field>
+        <field name="model">ve.reset.piloto.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Reiniciar Período Demo — Piloto SmartIVA Conecta">
+                <sheet>
+                    <div invisible="ejecutado">
+                        <div class="alert alert-warning" role="alert">
+                            <strong>⚠ Esto BORRA y regenera desde cero</strong> la conciliación,
+                            declaración, retenciones (clientes y proveedores), SENIAT, pagos y
+                            facturas de prueba del período activo en la compañía "PILOTO SMARTIVA
+                            CONECTA CA" — incluyendo cualquier progreso manual que hayas hecho
+                            (Conciliar/Aprobar/Declarar). Crea la compañía sandbox si no existe,
+                            separada de la compañía de demo general.
+                        </div>
+                        <p class="text-muted" style="font-size:0.85em;">
+                            No reemplaza <b>CONECTA-14</b> (el wizard de carga real que usará el
+                            cliente) — esto es solo para probar el resto del flujo mientras ese
+                            wizard se construye.
+                        </p>
+                        <div class="alert alert-danger mt-2" role="alert">
+                            <strong>⚠ "Borrar Todo" (abajo) es distinto</strong> — borra
+                            <b>todos</b> los períodos/facturas/cargas <b>y clientes/proveedores</b>
+                            de la compañía piloto (no solo el período activo) y
+                            <b>no genera nada después</b>. Úsalo para probar el wizard de carga
+                            real (<b>CONECTA-14</b>) desde cero, sin ningún dato de por medio.
+                        </div>
+                    </div>
+
+                    <div invisible="not ejecutado">
+                        <div class="alert alert-success mb-2" role="alert">
+                            <strong>Operación completada.</strong> Ver detalle abajo.
+                        </div>
+                        <field name="resultado" widget="text" readonly="1"
+                               style="font-family: monospace; white-space: pre; font-size: 12px;"/>
+                        <group>
+                            <field name="libro_ventas_csv" filename="libro_ventas_filename" readonly="1"/>
+                            <field name="libro_ventas_filename" invisible="1"/>
+                            <field name="libro_compras_csv" filename="libro_compras_filename" readonly="1"/>
+                            <field name="libro_compras_filename" invisible="1"/>
+                        </group>
+                        <separator string="Comprobantes PDF de Prueba — para subir al Buzón de Comprobantes (email/WhatsApp)"/>
+                        <field name="comprobantes_pdf_html" readonly="1" nolabel="1"/>
+                    </div>
+                </sheet>
+                <footer>
+                    <button name="action_generar"
+                            string="Reiniciar Período Demo"
+                            type="object"
+                            class="btn-primary"
+                            confirm="Esto borra la conciliación, declaración, retenciones, SENIAT, pagos y facturas de prueba actuales del período activo en PILOTO — incluyendo cualquier progreso manual. ¿Continuar?"
+                            invisible="ejecutado"/>
+                    <button name="action_borrar_todo"
+                            string="Borrar Todo (Sin Regenerar)"
+                            type="object"
+                            class="btn-danger"
+                            confirm="Esto borra TODOS los períodos, facturas, retenciones, declaraciones, cargas de Libro de Ventas/Compras (CONECTA-14) Y clientes/proveedores de la compañía PILOTO — no solo el período activo — y NO genera nada nuevo después. ¿Continuar?"
+                            invisible="ejecutado"/>
+                    <button string="Cerrar"
+                            class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="ve_reset_piloto_wizard_action" model="ir.actions.act_window">
+        <field name="name">Reiniciar Período Demo — Piloto Conecta</field>
+        <field name="res_model">ve.reset.piloto.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

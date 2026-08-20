@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="ve_wizard_libro_ventas_view_form" model="ir.ui.view">
+        <field name="name">ve.wizard.libro.ventas.form</field>
+        <field name="model">ve.wizard.libro.ventas</field>
+        <field name="arch" type="xml">
+            <form string="Libro de Ventas">
+                <group>
+                    <field name="periodo"
+                           placeholder="yyyy-mm  (ej: 2026-05)"/>
+                    <field name="quincena"/>
+                    <field name="company_id"
+                           groups="base.group_multi_company"/>
+                </group>
+                <footer>
+                    <button name="action_imprimir_pdf"
+                            string="Generar PDF"
+                            type="object"
+                            class="btn-primary"
+                            icon="fa-file-pdf-o"/>
+                    <button string="Cerrar"
+                            class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="ve_action_wizard_libro_ventas" model="ir.actions.act_window">
+        <field name="name">Libro de Ventas</field>
+        <field name="res_model">ve.wizard.libro.ventas</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

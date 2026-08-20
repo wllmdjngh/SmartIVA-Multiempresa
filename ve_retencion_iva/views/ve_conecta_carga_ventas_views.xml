@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══ Lista ═══════════════════════════════════════════════════════════════ -->
+    <record id="ve_conecta_carga_ventas_view_list" model="ir.ui.view">
+        <field name="name">ve.conecta.carga.ventas.list</field>
+        <field name="model">ve.conecta.carga.ventas</field>
+        <field name="arch" type="xml">
+            <list string="Cargas Libro de Ventas">
+                <field name="name"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="mes_archivo" string="Mes"/>
+                <field name="archivo_nombre" string="Archivo"/>
+                <field name="count_lineas" string="Filas"/>
+                <field name="count_brechas" string="Brechas"/>
+                <field name="count_duplicados" string="N° Duplicadas"/>
+                <field name="count_duplicados_eliminados" string="N° Eliminadas"/>
+                <field name="count_anulacion_omitida" string="N° Anulaciones" optional="show"/>
+                <field name="count_diferencias_archivo" string="N° Diferencias (sin resolver)"/>
+                <field name="count_sin_retencion" string="N° Sin Retención"/>
+                <field name="count_ret_no_spe" string="N° Ret. no SPE"
+                       decoration-danger="count_ret_no_spe > 0"/>
+                <field name="estado" widget="badge"
+                       decoration-muted="estado == 'borrador'"
+                       decoration-warning="estado == 'confirmado_discrepancias'"
+                       decoration-success="estado == 'confirmado'"/>
+                <field name="confirmado_por_id" optional="show"/>
+                <field name="fecha_confirmacion" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══ Lista de Duplicadas A REVISAR (antes de eliminar) ═══════════════════════ -->
+    <record id="ve_conecta_carga_ventas_linea_view_list_pendientes" model="ir.ui.view">
+        <field name="name">ve.conecta.carga.ventas.linea.list.pendientes</field>
+        <field name="model">ve.conecta.carga.ventas.linea</field>
+        <field name="arch" type="xml">
+            <list string="Filas Duplicadas a Revisar" create="0" edit="0" delete="0">
+                <header>
+                    <button name="action_eliminar_seleccionadas"
+                            string="Eliminar Seleccionadas"
+                            type="object"
+                            class="btn-danger"
+                            confirm="Se van a eliminar las filas seleccionadas (quedan consultables en 'Ver Duplicadas Eliminadas'). ¿Confirmar?"/>
+                </header>
+                <field name="fila"/>
+                <field name="rif"/>
+                <field name="nombre_cliente"/>
+                <field name="zona"/>
+                <field name="nro_control"/>
+                <field name="nro_documento"/>
+                <field name="fecha"/>
+                <field name="monto_retenido" sum="Total"/>
+                <field name="motivo_eliminacion" string="Motivo"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══ Lista de Duplicadas Eliminadas (soft-delete) ═══════════════════════════ -->
+    <record id="ve_conecta_carga_ventas_linea_view_list_eliminadas" model="ir.ui.view">
+        <field name="name">ve.conecta.carga.ventas.linea.list.eliminadas</field>
+        <field name="model">ve.conecta.carga.ventas.linea</field>
+        <field name="arch" type="xml">
+            <list string="Filas Duplicadas Eliminadas" create="0" edit="0" delete="0">
+                <field name="fila"/>
+                <field name="rif"/>
+                <field name="nombre_cliente"/>
+                <field name="zona"/>
+                <field name="nro_control"/>
+                <field name="nro_documento"/>
+                <field name="fecha"/>
+                <field name="monto_retenido" sum="Total"/>
+                <field name="motivo_eliminacion" string="Motivo"/>
+                <field name="fecha_eliminacion_duplicado"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══ Lista de Discrepancias (todas las categorías, agrupable/filtrable) ═══ -->
+    <record id="ve_conecta_carga_ventas_linea_view_list_discrepancias" model="ir.ui.view">
+        <field name="name">ve.conecta.carga.ventas.linea.list.discrepancias</field>
+        <field name="model">ve.conecta.carga.ventas.linea</field>
+        <field name="arch" type="xml">
+            <list string="Discrepancias" editable="bottom" create="0" delete="0">
+                <header>
+                    <button name="action_eliminar_discrepancia"
+                            string="Eliminar Seleccionadas"
+                            type="object"
+                            class="btn-danger"
+                            confirm="Se van a eliminar (soft-delete, con motivo en el chatter) las filas seleccionadas. ¿Confirmar?"/>
+                </header>
+                <field name="fila"/>
+                <field name="categoria_discrepancia" widget="badge"
+                       decoration-danger="bloqueante"
+                       decoration-warning="not bloqueante"/>
+                <field name="rif"/>
+                <field name="nombre_cliente"/>
+                <field name="zona" optional="show"/>
+                <field name="nro_control"/>
+                <field name="nro_documento"/>
+                <field name="fecha"/>
+                <field name="base_16" sum="Total" optional="hide"/>
+                <field name="base_8" sum="Total" optional="hide"/>
+                <field name="monto_retenido" sum="Total"/>
+                <field name="bloqueante"/>
+                <field name="brecha" string="Motivo"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="ve_conecta_carga_ventas_linea_view_search_discrepancias" model="ir.ui.view">
+        <field name="name">ve.conecta.carga.ventas.linea.search.discrepancias</field>
+        <field name="model">ve.conecta.carga.ventas.linea</field>
+        <field name="arch" type="xml">
+            <search string="Buscar Discrepancias">
+                <field name="rif"/>
+                <field name="nombre_cliente"/>
+                <field name="nro_documento"/>
+                <field name="nro_control"/>
+                <filter name="solo_bloqueantes" string="Solo bloqueantes" domain="[('bloqueante', '=', True)]"/>
+                <separator/>
+                <group>
+                    <filter name="group_categoria" string="Categoría" context="{'group_by': 'categoria_discrepancia'}"/>
+                    <filter name="group_zona" string="Zona" context="{'group_by': 'zona'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ══ Lista de Facturas sin Retención (Agente de Retención sin ve.wh.iva) ═══ -->
+    <record id="ve_account_move_view_list_sin_retencion" model="ir.ui.view">
+        <field name="name">account.move.list.sin.retencion</field>
+        <field name="model">account.move</field>
+        <field name="arch" type="xml">
+            <list string="Facturas sin Retención (revisar)" create="0" delete="0">
+                <header>
+                    <button name="action_crear_retencion_esperada_manual"
+                            string="Crear Retención"
+                            type="object"
+                            class="btn-primary"
+                            groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"
+                            confirm="Se va a crear la Retención Esperada para las facturas seleccionadas (se omiten en silencio las que ya tengan una). ¿Confirmar?"/>
+                </header>
+                <field name="name" string="Factura"/>
+                <field name="partner_id" string="Cliente"/>
+                <field name="rif"/>
+                <field name="es_agente_retencion" string="Contribuyente Especial" widget="boolean"/>
+                <field name="nro_control"/>
+                <field name="invoice_date" string="Fecha"/>
+                <field name="amount_total" string="Total" sum="Total"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══ Búsqueda ════════════════════════════════════════════════════════════ -->
+    <record id="ve_conecta_carga_ventas_view_search" model="ir.ui.view">
+        <field name="name">ve.conecta.carga.ventas.search</field>
+        <field name="model">ve.conecta.carga.ventas</field>
+        <field name="arch" type="xml">
+            <search string="Buscar Cargas Libro de Ventas">
+                <field name="name"/>
+                <field name="archivo_nombre" string="Nombre de Archivo"/>
+                <field name="mes_archivo" string="Mes"/>
+                <filter name="borrador" string="Borrador" domain="[('estado', '=', 'borrador')]"/>
+                <filter name="confirmado" string="Confirmado" domain="[('estado', '=', 'confirmado')]"/>
+                <separator/>
+                <group>
+                    <filter name="group_mes" string="Mes" context="{'group_by': 'mes_archivo'}"/>
+                    <filter name="group_estado" string="Estado" context="{'group_by': 'estado'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ══ Formulario ══════════════════════════════════════════════════════════ -->
+    <record id="ve_conecta_carga_ventas_view_form" model="ir.ui.view">
+        <field name="name">ve.conecta.carga.ventas.form</field>
+        <field name="model">ve.conecta.carga.ventas</field>
+        <field name="arch" type="xml">
+            <form string="Carga Libro de Ventas — SmartIVA Conecta">
+                <header>
+                    <button name="action_previsualizar"
+                            string="Previsualizar"
+                            type="object"
+                            class="btn-primary"
+                            invisible="not archivo or estado != 'borrador'"/>
+                    <button name="action_confirmar"
+                            string="Confirmar Carga"
+                            type="object"
+                            class="btn-primary"
+                            confirm="Se van a crear las facturas de venta a partir de las filas de abajo. ¿Confirmar?"
+                            invisible="not linea_ids or estado == 'confirmado' or count_bloqueantes &gt; 0"/>
+                    <button name="action_confirmar_omitir_bloqueadas"
+                            string="Confirmar y Omitir Bloqueadas"
+                            type="object"
+                            class="btn-primary"
+                            confirm="Se van a crear las facturas de las filas limpias. Las filas bloqueadas quedan pendientes en la carga (estado 'Confirmado c/Discrepancias') para resolver después. ¿Confirmar?"
+                            invisible="count_bloqueantes == 0 or estado == 'confirmado'"/>
+                    <button name="action_ver_discrepancias"
+                            string="Discrepancias"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="count_discrepancias == 0"/>
+                    <button name="action_ver_duplicados_eliminados"
+                            string="Ver Duplicadas Eliminadas"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="count_duplicados_eliminados == 0"/>
+                    <button name="action_ver_diferencias_archivo"
+                            string="Dif. Retención"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="estado == 'borrador' or count_diferencias_archivo == 0"/>
+                    <button name="action_ver_diferencias_aceptadas"
+                            string="Ver Diferencias Aceptadas"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="estado == 'borrador'"/>
+                    <button name="action_ver_sin_retencion_revisar"
+                            string="Ver Facturas sin Retención (revisar)"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="estado == 'borrador' or count_sin_retencion == 0"/>
+                    <button name="action_ver_ret_no_spe"
+                            string="Ret. no SPE"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="estado == 'borrador' or count_ret_no_spe == 0"/>
+                    <button name="action_deshacer"
+                            string="Deshacer Carga"
+                            type="object"
+                            class="btn-danger"
+                            confirm="Se van a eliminar TODAS las facturas/pagos/retenciones creadas por esta carga (los clientes creados se conservan). La carga vuelve a Borrador. ¿Confirmar?"
+                            invisible="estado == 'borrador'"/>
+                    <field name="estado" widget="statusbar" statusbar_visible="borrador,confirmado_discrepancias,confirmado"/>
+                </header>
+                <sheet>
+                    <field name="count_diferencias_archivo" invisible="1"/>
+                    <field name="count_sin_retencion" invisible="1"/>
+                    <field name="count_ret_no_spe" invisible="1"/>
+                    <field name="count_duplicados_eliminados" invisible="1"/>
+                    <field name="count_anulacion_omitida" invisible="1"/>
+                    <field name="count_discrepancias" invisible="1"/>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+
+                    <div class="alert alert-info" role="status" invisible="estado == 'confirmado'">
+                        <strong>Columnas reconocidas:</strong> RIF &#183; Cliente &#183;
+                        N&#176; Control &#183; N&#176; Factura &#183; Fecha &#183;
+                        Base 16% &#183; Base 8% &#183; Exento/No Gravado &#183;
+                        Monto Retenido (opcional) &#183; Estado Pago (opcional, informativo).<br/>
+                        Primera fila del archivo = encabezados. Formatos aceptados: CSV o XLSX.
+                    </div>
+
+                    <div class="alert alert-danger" role="alert" invisible="count_bloqueantes == 0 or estado == 'confirmado'">
+                        <i class="fa fa-ban" title="Bloqueado"/>&#160;
+                        <field name="count_bloqueantes" nolabel="1" readonly="1" class="d-inline"/>
+                        fila(s) bloqueada(s) (sin RIF, sin N&#176; Factura, o duplicadas) —
+                        no se puede confirmar hasta corregirlas o eliminarlas.
+                        <span invisible="count_duplicados == 0">
+                            De ellas, <field name="count_duplicados" nolabel="1" readonly="1" class="d-inline"/>
+                            son duplicadas — use el bot&#243;n "Discrepancias" arriba.
+                        </span>
+                    </div>
+                    <div class="alert alert-warning" role="alert" invisible="count_brechas == count_bloqueantes or estado == 'confirmado'">
+                        <i class="fa fa-exclamation-triangle" title="Advertencia"/>&#160;
+                        Hay filas con brechas informativas (cliente nuevo / se marcará Agente de
+                        Retenci&#243;n) — revise la columna "Brecha", no bloquean la confirmaci&#243;n.
+                    </div>
+
+                    <group>
+                        <group>
+                            <field name="company_id" groups="base.group_multi_company" readonly="estado == 'confirmado'"/>
+                            <field name="archivo" widget="binary" filename="archivo_nombre"
+                                   readonly="estado == 'confirmado'"/>
+                            <field name="archivo_nombre" invisible="1"/>
+                            <field name="formato_fecha" readonly="estado == 'confirmado'"/>
+                        </group>
+                        <group invisible="estado != 'confirmado'">
+                            <field name="confirmado_por_id" readonly="1"/>
+                            <field name="fecha_confirmacion" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <field name="linea_ids" readonly="estado == 'confirmado'">
+                        <list editable="bottom" decoration-danger="bloqueante" decoration-warning="brecha and not bloqueante">
+                            <field name="fila" readonly="1"/>
+                            <field name="rif"/>
+                            <field name="nombre_cliente"/>
+                            <field name="nro_control"/>
+                            <field name="nro_documento"/>
+                            <field name="fecha"/>
+                            <field name="base_16" sum="Total"/>
+                            <field name="base_8" sum="Total"/>
+                            <field name="base_exento" sum="Total" optional="show"/>
+                            <field name="monto_retenido" sum="Total" optional="show"/>
+                            <field name="estado_pago" optional="show"/>
+                            <field name="nro_comp_retencion" string="N° Comprobante" optional="show"/>
+                            <field name="zona" optional="show"/>
+                            <field name="es_spe" string="SPE" optional="show"/>
+                            <field name="validado_seniat" string="Validado SENIAT" optional="show"/>
+                            <field name="partner_id" string="Cliente (match)"/>
+                            <field name="brecha" widget="badge"
+                                   decoration-danger="bloqueante"
+                                   decoration-warning="brecha and not bloqueante"/>
+                            <field name="invoice_id" readonly="1" optional="show"/>
+                            <field name="bloqueante" column_invisible="1"/>
+                            <field name="estado_carga" column_invisible="1"/>
+                        </list>
+                    </field>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="ve_conecta_carga_ventas_action" model="ir.actions.act_window">
+        <field name="name">Cargar Libro de Ventas (Conecta)</field>
+        <field name="res_model">ve.conecta.carga.ventas</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="ve_conecta_carga_ventas_view_search"/>
+    </record>
+
+</odoo>

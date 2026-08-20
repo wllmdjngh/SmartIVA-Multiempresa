@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="DJCS_view_iva_proveedores_placeholder_form" model="ir.ui.view">
+        <field name="name">ve.iva.proveedores.placeholder.form</field>
+        <field name="model">ve.iva.proveedores.placeholder</field>
+        <field name="arch" type="xml">
+            <form string="IVA Proveedores">
+                <sheet>
+                    <div class="alert alert-info" role="alert">
+                        <i class="fa fa-info-circle" title="Información"/> <field name="message" readonly="1"/>
+                    </div>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="DJCS_action_iva_proveedores_placeholder" model="ir.actions.act_window">
+        <field name="name">IVA Proveedores</field>
+        <field name="res_model">ve.iva.proveedores.placeholder</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

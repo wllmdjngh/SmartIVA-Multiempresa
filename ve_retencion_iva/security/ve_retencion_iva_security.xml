@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="group_ret_iva_usuario" model="res.groups">
+        <field name="name">Usuario Retenciones IVA</field>
+        <!-- Bug real encontrado 2026-07-30: sin esto, un usuario del
+             cliente con SOLO este grupo (o group_ret_iva_gestor, que lo
+             implica) no ve la app Facturación en absoluto — el menú raíz
+             del módulo (ve_retencion_menu_root) cuelga de
+             account.menu_finance, que requiere algún grupo de account
+             para ser visible. account.group_account_invoice es el nivel
+             mínimo ("Facturación" básico) sin dar acceso a reportes
+             contables completos como sí hace group_ret_iva_demo (implica
+             account.group_account_manager, para el admin). -->
+        <field name="implied_ids" eval="[(4, ref('account.group_account_invoice'))]"/>
+        <field name="comment">Puede registrar retenciones manuales y consultar conciliaciones.</field>
+    </record>
+
+    <record id="group_ret_iva_gestor" model="res.groups">
+        <field name="name">Gestor Retenciones IVA</field>
+        <field name="implied_ids" eval="[(4, ref('group_ret_iva_usuario'))]"/>
+        <field name="comment">Acceso completo: conciliar, aprobar y gestionar períodos.</field>
+    </record>
+
+    <record id="group_ret_iva_demo" model="res.groups">
+        <field name="name">DEMO Impuestos</field>
+        <field name="implied_ids" eval="[
+            (4, ref('group_ret_iva_gestor')),
+            (4, ref('account.group_account_manager')),
+        ]"/>
+        <field name="comment">Acceso completo al módulo IVA + Contabilidad completa + reset demo.</field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         MULTI-01: segregación por compañía (ir.rule)
+         Sin estas reglas, cualquier usuario con acceso al módulo ve
+         retenciones/períodos/comprobantes de TODAS las compañías, aunque
+         los modelos ya tengan company_id (MULTI-02). Patrón estándar de
+         Odoo (mismo que usa account.move en el core): domain_force con
+         company_ids, sin restringir a un grupo — aplica a todos.
+         ve.sancion.iva queda fuera (no tiene company_id, ni relación a
+         conciliacion_id — gap detectado pero no cerrado en este esfuerzo).
+         ══════════════════════════════════════════════════════════════════ -->
+
+    <record id="ve_wh_iva_company_rule" model="ir.rule">
+        <field name="name">ve.wh.iva: multi-compañía</field>
+        <field name="model_id" ref="model_ve_wh_iva"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="ve_wh_iva_prov_company_rule" model="ir.rule">
+        <field name="name">ve.wh.iva.prov: multi-compañía</field>
+        <field name="model_id" ref="model_ve_wh_iva_prov"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="ve_conciliacion_periodo_company_rule" model="ir.rule">
+        <field name="name">ve.conciliacion.periodo: multi-compañía</field>
+        <field name="model_id" ref="model_ve_conciliacion_periodo"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="ve_comprobante_inbox_company_rule" model="ir.rule">
+        <field name="name">ve.comprobante.inbox: multi-compañía</field>
+        <field name="model_id" ref="model_ve_comprobante_inbox"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="ve_declaracion_iva_company_rule" model="ir.rule">
+        <field name="name">ve.declaracion.iva: multi-compañía</field>
+        <field name="model_id" ref="model_ve_declaracion_iva"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="ve_seniat_retencion_company_rule" model="ir.rule">
+        <field name="name">ve.seniat.retencion: multi-compañía</field>
+        <field name="model_id" ref="model_ve_seniat_retencion"/>
+        <!-- conciliacion_id NO es obligatorio (hay registros huérfanos por
+             diseño, ej. al desvincular de un período) — sin período no hay
+             cómo saber la compañía, así que quedan visibles a todos en vez
+             de ocultarse (mismo patrón que usa el core de Odoo con
+             company_id=False en modelos compartidos). -->
+        <field name="domain_force">['|', ('conciliacion_id', '=', False), ('conciliacion_id.company_id', 'in', company_ids)]</field>
+    </record>
+
+</odoo>

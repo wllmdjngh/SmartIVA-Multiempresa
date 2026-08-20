@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="wizard_carga_seniat_view_form" model="ir.ui.view">
+        <field name="name">ve.seniat.wizard.carga.form</field>
+        <field name="model">ve.seniat.wizard.carga</field>
+        <field name="arch" type="xml">
+            <form string="Cargar Retenciones SENIAT desde XLSX">
+
+                <group>
+                    <field name="conciliacion_id" readonly="1"/>
+                </group>
+
+                <group string="Archivo">
+                    <field name="archivo_xlsx" widget="binary" filename="archivo_nombre"
+                           string="Archivo XLSX"/>
+                    <field name="archivo_nombre" invisible="1"/>
+                </group>
+
+                <div class="alert alert-info" role="status" style="margin:8px 0; font-size:9pt;">
+                    <strong>Formato esperado:</strong> Archivo XLSX con una pesta&#xF1;a
+                    por mes. La pesta&#xF1;a se selecciona autom&#xE1;ticamente seg&#xFA;n
+                    el Per&#xED;odo Fiscal (puede llamarse <em>5</em>, <em>05</em> o
+                    <em>mayo</em>).<br/>
+                    <strong>Columnas aceptadas (primera fila = encabezados):</strong><br/>
+                    RIF &#xB7; Nombre &#xB7; Per&#xED;odo &#xB7; Fecha &#xB7;
+                    N&#xB0; Comprobante &#xB7; N&#xB0; Control &#xB7; N&#xB0; Factura &#xB7;
+                    Tipo &#xB7; Base Imponible &#xB7; Al&#xED;cuota &#xB7; Monto Retenido &#xB7;
+                    Total &#xB7; Exento
+                </div>
+
+                <!-- Vista previa -->
+                <div invisible="not preview" style="padding:0 8px;">
+                    <label for="preview" string="Vista Previa"
+                           class="o_form_label" style="font-weight:600;"/>
+                    <field name="preview" nolabel="1" readonly="1" widget="text"
+                           style="font-family:monospace;font-size:8.5pt;
+                                  max-height:160px;overflow-y:auto;
+                                  width:100%;display:block;"/>
+                </div>
+
+                <!-- Resultado de importación -->
+                <div invisible="not resultado" style="padding:0 8px; margin-top:8px;">
+                    <field name="resultado" nolabel="1" readonly="1" widget="text"
+                           style="color:#1a5c2a;font-weight:600;
+                                  width:100%;display:block;"/>
+                </div>
+
+                <footer>
+                    <button name="action_previsualizar"
+                            string="Previsualizar"
+                            type="object"
+                            class="btn-primary"
+                            invisible="not archivo_xlsx or preview"/>
+                    <button name="action_previsualizar"
+                            string="Re-previsualizar"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="not preview or importado"/>
+                    <button name="action_importar"
+                            string="Importar"
+                            type="object"
+                            class="btn-primary"
+                            invisible="not preview or importado"/>
+                    <button string="Cerrar" special="cancel" class="btn-secondary"/>
+                </footer>
+
+            </form>
+        </field>
+    </record>
+
+</odoo>

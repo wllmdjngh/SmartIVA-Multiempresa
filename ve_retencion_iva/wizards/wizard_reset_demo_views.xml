@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="ve_reset_demo_wizard_view_form" model="ir.ui.view">
+        <field name="name">ve.reset.demo.wizard.form</field>
+        <field name="model">ve.reset.demo.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Reinicializar Data Demo">
+                <sheet>
+                    <field name="conciliacion_id" invisible="1"/>
+                    <field name="periodo_label"   invisible="1"/>
+
+                    <!-- Panel de confirmación (antes de ejecutar) -->
+                    <div invisible="ejecutado">
+                        <div class="alert alert-warning" role="alert">
+                            <strong>&#191;Reiniciar la data de demostración?</strong>
+                            <br/>
+                            <span invisible="not conciliacion_id">
+                                Se borrarán las retenciones del período
+                                <b><field name="periodo_label" readonly="1" nolabel="1"/></b>
+                                y se recrearán desde cero.
+                            </span>
+                            <span invisible="conciliacion_id">
+                                Se borrará el período
+                                <b>2026-05 2Q</b>
+                                con todas sus retenciones Odoo y SENIAT, y se recreará
+                                desde cero.
+                            </span>
+                        </div>
+
+                        <div class="border rounded p-3 bg-100">
+                            <h5 class="mt-0">Escenario de demo</h5>
+                            <p class="mb-1">
+                                <b>6 agentes SPE</b> ·
+                                <b>13 retenciones Odoo</b> ·
+                                <b>10 retenciones SENIAT</b>
+                            </p>
+                            <table class="table table-sm table-bordered mb-2"
+                                   style="font-size:0.85em; max-width:480px;">
+                                <thead class="thead-light">
+                                    <tr>
+                                        <th>Estado</th>
+                                        <th class="text-center">Cant.</th>
+                                        <th>Resultado conciliación</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>&#x2714; Confirmado</td>
+                                        <td class="text-center">3</td>
+                                        <td>Conciliado (match exacto)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>&#x270E; Borrador</td>
+                                        <td class="text-center">3</td>
+                                        <td>Conciliado (match exacto, 2 doble alícuota)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>&#x270E; Borrador</td>
+                                        <td class="text-center">2</td>
+                                        <td>Diferencia de monto vs SENIAT</td>
+                                    </tr>
+                                    <tr>
+                                        <td>&#x270E; Borrador</td>
+                                        <td class="text-center">2</td>
+                                        <td>Solo en Odoo (sin registro SENIAT)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>&#x23F3; Esperado</td>
+                                        <td class="text-center">1</td>
+                                        <td>Sin comprobante recibido</td>
+                                    </tr>
+                                    <tr>
+                                        <td>&#x26A0; Vencido</td>
+                                        <td class="text-center">1</td>
+                                        <td>Superó el plazo sin recibirse</td>
+                                    </tr>
+                                    <tr>
+                                        <td>&#x274C; Anulado</td>
+                                        <td class="text-center">1</td>
+                                        <td>Con motivo de anulación</td>
+                                    </tr>
+                                    <tr class="table-info">
+                                        <td>Solo SENIAT</td>
+                                        <td class="text-center">2</td>
+                                        <td>En SENIAT, no registrado en Odoo</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p class="mb-0 text-muted" style="font-size:0.8em;">
+                                Canales: Email · WhatsApp · Directorio · Manual
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Panel de resultado (después de ejecutar) -->
+                    <div invisible="not ejecutado">
+                        <div class="alert alert-success mb-2" role="alert">
+                            <strong>Demo reinicializado correctamente.</strong>
+                        </div>
+                        <field name="resultado" widget="text" readonly="1"
+                               style="font-family: monospace; white-space: pre; font-size: 12px;"/>
+                    </div>
+                </sheet>
+                <footer>
+                    <button name="action_reiniciar"
+                            string="Reiniciar Demo"
+                            type="object"
+                            class="btn-danger"
+                            invisible="ejecutado"
+                            confirm="&#191;Confirmar reinicio? Se borrarán los datos actuales del período de demo."/>
+                    <button name="action_crear_facturas_prov_demo"
+                            string="Crear Facturas Compra Demo"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="ejecutado"
+                            title="Crea facturas de compra y comprobantes IVA Proveedores sin borrar el resto del demo"/>
+                    <button name="action_generar_historico"
+                            string="Generar Histórico (5 quincenas)"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="ejecutado"
+                            confirm="&#191;Generar 5 quincenas históricas declaradas antes del período activo? Si ya existen períodos con esos nombres, se borran y regeneran completos."
+                            title="Crea 5 quincenas históricas Declaradas con facturas reales y numeración creciente coherente, para poblar Tendencias IVA / KPIs"/>
+                    <button string="Cerrar"
+                            class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="ve_reset_demo_wizard_action" model="ir.actions.act_window">
+        <field name="name">Reinicializar Demo</field>
+        <field name="res_model">ve.reset.demo.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

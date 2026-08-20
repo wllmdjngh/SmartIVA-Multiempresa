@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══ Lista ═══════════════════════════════════════════════════════════ -->
+    <record id="ve_wh_iva_prov_view_list" model="ir.ui.view">
+        <field name="name">ve.wh.iva.prov.list</field>
+        <field name="model">ve.wh.iva.prov</field>
+        <field name="arch" type="xml">
+            <list string="Retenciones IVA Proveedores"
+                  default_order="fecha desc">
+                <field name="company_id"         string="Compa&#xF1;&#xED;a" optional="show"
+                       groups="base.group_multi_company"/>
+                <field name="ref"                string="Ref."/>
+                <field name="name"               string="N&#xB0; Comprobante"/>
+                <field name="fecha"              string="Fecha"/>
+                <field name="partner_id"         string="Proveedor"/>
+                <field name="rif"                optional="show"/>
+                <field name="invoice_name"       string="Factura"/>
+                <field name="nro_control"        string="N&#xB0; Control"/>
+                <field name="monto_base_16"      string="Base 16%"   sum="Total" optional="show"/>
+                <field name="monto_iva_16"       string="IVA 16%"    sum="Total"/>
+                <field name="monto_base_8"       string="Base 8%"    sum="Total" optional="show"/>
+                <field name="monto_iva_8"        string="IVA 8%"     sum="Total" optional="show"/>
+                <field name="monto_iva_total"    string="IVA Total"  sum="Total"/>
+                <field name="porcentaje_retencion" string="%" optional="show"/>
+                <field name="monto_retenido"     string="Retenido"   sum="Total"/>
+                <field name="declaracion_iva_id"  string="Declaración IVA"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'declarado'"
+                       decoration-info="state == 'enviado'"
+                       decoration-muted="state == 'anulado'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══ Búsqueda ════════════════════════════════════════════════════════ -->
+    <record id="ve_wh_iva_prov_view_search" model="ir.ui.view">
+        <field name="name">ve.wh.iva.prov.search</field>
+        <field name="model">ve.wh.iva.prov</field>
+        <field name="arch" type="xml">
+            <search string="Retenciones IVA Proveedores">
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="partner_id" string="Proveedor"/>
+                <field name="name" string="N&#xB0; Comprobante"/>
+                <field name="nro_control"/>
+                <field name="declaracion_iva_id" string="Per&#xED;odo"/>
+                <filter name="borrador" string="Borrador" domain="[('state','=','borrador')]"/>
+                <filter name="enviado" string="Enviado" domain="[('state','=','enviado')]"/>
+                <filter name="declarado" string="Declarado" domain="[('state','=','declarado')]"/>
+                <filter name="anulado" string="Anulado" domain="[('state','=','anulado')]"/>
+                <separator/>
+                <group>
+                    <filter name="gb_company" string="Compa&#xF1;&#xED;a"
+                            context="{'group_by': 'company_id'}"
+                            groups="base.group_multi_company"/>
+                    <filter name="gb_periodo" string="Per&#xED;odo"
+                            context="{'group_by': 'declaracion_iva_id'}"/>
+                    <filter name="gb_estado" string="Estado"
+                            context="{'group_by': 'state'}"/>
+                    <filter name="gb_proveedor" string="Proveedor"
+                            context="{'group_by': 'partner_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ══ Formulario ══════════════════════════════════════════════════════ -->
+    <record id="ve_wh_iva_prov_view_form" model="ir.ui.view">
+        <field name="name">ve.wh.iva.prov.form</field>
+        <field name="model">ve.wh.iva.prov</field>
+        <field name="arch" type="xml">
+            <form string="Comprobante Retenci&#xF3;n IVA Proveedor">
+                <header>
+                    <button name="action_imprimir_comprobante"
+                            string="Imprimir Comprobante"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-print"
+                            invisible="not id"/>
+                    <button name="action_enviar"
+                            string="Enviar Comprobante PDF"
+                            type="object"
+                            class="btn-primary"
+                            icon="fa-paper-plane"
+                            invisible="state != 'borrador'"/>
+                    <button name="action_marcar_enviado"
+                            string="Marcar Enviado"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="state != 'borrador'"/>
+                    <button name="action_anular"
+                            string="Anular"
+                            type="object"
+                            class="btn-warning"
+                            invisible="state in ('declarado', 'anulado')"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="borrador,enviado,declarado"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="ref" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Proveedor">
+                            <field name="partner_id"  readonly="id"/>
+                            <field name="rif"         readonly="1"/>
+                            <field name="name"        readonly="1" string="N&#xB0; Comprobante"/>
+                            <field name="company_id"  readonly="id" groups="base.group_multi_company"/>
+                        </group>
+                        <group string="Per&#xED;odo y Fecha">
+                            <field name="declaracion_iva_id" readonly="id"/>
+                            <field name="fecha"              readonly="id"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Factura Proveedor">
+                            <field name="invoice_id"           readonly="id"/>
+                            <field name="nro_control"          readonly="id"/>
+                            <field name="porcentaje_retencion" readonly="id" string="% Retenci&#xF3;n"/>
+                        </group>
+                        <group string="Montos"/>
+                    </group>
+                    <group col="4">
+                        <field name="monto_base_16"   readonly="id" string="Base 16%"/>
+                        <field name="monto_iva_16"    readonly="1"  string="IVA 16%"/>
+                        <field name="monto_base_8"    readonly="id" string="Base 8%"/>
+                        <field name="monto_iva_8"     readonly="1"  string="IVA 8%"/>
+                        <field name="monto_iva_total" readonly="1"  string="IVA Total"      colspan="2"/>
+                        <field name="monto_retenido"  readonly="1"  string="Monto Retenido" colspan="2"/>
+                    </group>
+                    <group string="Declaraci&#xF3;n"
+                           invisible="state not in ('enviado', 'declarado')">
+                        <group>
+                            <field name="fecha_envio"     readonly="1"/>
+                            <field name="enviado_por_id"  readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="fecha_declaracion"  readonly="1"/>
+                            <field name="declarado_por_id"   readonly="1"/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ══ Acción ══════════════════════════════════════════════════════════ -->
+    <record id="ve_wh_iva_prov_action" model="ir.actions.act_window">
+        <field name="name">Retenciones IVA Proveedores</field>
+        <field name="res_model">ve.wh.iva.prov</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_group_conciliacion': 1}</field>
+    </record>
+
+</odoo>

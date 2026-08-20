@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="ve_wizard_setup_compania_view_form" model="ir.ui.view">
+        <field name="name">ve.wizard.setup.compania.form</field>
+        <field name="model">ve.wizard.setup.compania</field>
+        <field name="arch" type="xml">
+            <form string="Configuración Inicial — Compañía Nueva">
+                <sheet>
+                    <div invisible="ejecutado">
+                        <div class="alert alert-info" role="alert">
+                            Crea el plan de cuentas, diarios e impuestos <b>mínimos</b> que
+                            SmartIVA necesita para operar (sin depender de instalar <b>l10n_ve</b>)
+                            en la compañía elegida abajo: cuenta de Ingresos, Gastos, Por Cobrar,
+                            Por Pagar, IVA Crédito/Débito Fiscal (códigos <b>1151004</b>/<b>2172003</b>),
+                            diarios de Ventas/Compras/Miscelánea/Banco, e impuestos IVA 16%/8%
+                            (Venta y Compra). <b>Idempotente</b> — si algo ya existe, lo reutiliza
+                            y lo reporta, no lo duplica.
+                        </div>
+                        <p class="text-muted" style="font-size:0.85em;">
+                            No configura: idioma, moneda, datos fiscales de la compañía (RIF,
+                            domicilio, condición de contribuyente) ni las cuentas/diarios reales
+                            del cliente si difieren de estos códigos genéricos — eso se hace
+                            aparte, ver <code>GUIA_INSTALACION_PILOTO_DESPACHO.md</code>.
+                        </p>
+                        <group>
+                            <field name="company_id"/>
+                            <field name="ocultar_menus_demo"/>
+                        </group>
+                        <group string="Usuario del cliente (opcional — dejar el correo en blanco para omitir)">
+                            <field name="usuario_nombre"/>
+                            <field name="usuario_email"/>
+                            <field name="usuario_rol"/>
+                        </group>
+                        <p class="text-muted" style="font-size:0.85em;">
+                            El usuario se crea <b>sin enviar invitación por correo</b> — se invita a
+                            mano (Ajustes → Usuarios → "Invitar") cuando el entorno ya esté validado.
+                            De paso, este wizard también corre la actualización de tasa BCV
+                            (<code>ve_bcv_rates</code>) si el módulo está instalado.
+                        </p>
+                    </div>
+
+                    <div invisible="not ejecutado">
+                        <div class="alert alert-success mb-2" role="alert">
+                            <strong>Configuración completada.</strong> Ver detalle abajo.
+                        </div>
+                        <field name="resultado" widget="text" readonly="1"
+                               style="font-family: monospace; white-space: pre; font-size: 12px;"/>
+                    </div>
+                </sheet>
+                <footer>
+                    <button name="action_configurar"
+                            string="Configurar"
+                            type="object"
+                            class="btn-primary"
+                            confirm="Esto crea cuentas/diarios/impuestos en la compañía elegida si no existen ya. ¿Continuar?"
+                            invisible="ejecutado"/>
+                    <button string="Cerrar"
+                            class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="ve_wizard_setup_compania_action" model="ir.actions.act_window">
+        <field name="name">Configuración Inicial — Compañía Nueva</field>
+        <field name="res_model">ve.wizard.setup.compania</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

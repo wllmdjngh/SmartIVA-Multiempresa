@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="report_libro_ventas" model="ir.ui.view">
+        <field name="name">report.ve.wizard.libro.ventas</field>
+        <field name="model">ve.wizard.libro.ventas</field>
+        <field name="type">qweb</field>
+        <field name="arch" type="xml">
+            <t t-name="ve_retencion_iva.report_libro_ventas">
+                <t t-call="web.html_container">
+                    <t t-foreach="docs" t-as="wizard">
+                        <t t-call="ve_retencion_iva.ve_iva_layout">
+                            <div class="page">
+
+                                <!-- ── Cabecera del reporte ── -->
+                                <div style="margin-bottom:6pt;">
+                                    <table style="width:100%; font-size:8.5pt;">
+                                        <tr>
+                                            <td style="width:60%;">
+                                                <strong><t t-esc="wizard.company_id.name"/></strong><br/>
+                                                R.I.F.: <t t-esc="wizard.company_id.vat or ''"/><br/>
+                                                <span style="font-size:7pt; color:#555;">
+                                                    Régimen Legal: Ley IVA Art. 76 / PA SNAT/2025/000054
+                                                </span>
+                                            </td>
+                                            <td style="width:40%; text-align:right;">
+                                                <strong style="font-size:11pt;">LIBRO DE VENTAS</strong><br/>
+                                                Período: <strong><t t-esc="wizard.periodo"/>
+                                                <t t-if="wizard.quincena != 'completo'"> <t t-esc="wizard.quincena"/></t>
+                                                </strong><br/>
+                                                <span style="font-size:7pt;">VENTAS INTERNAS</span>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </div>
+
+                                <!-- ── Tabla de detalle ── -->
+                                <style>
+                                    .tbl-lv td, .tbl-lv th { border: 0.3pt solid #BBBBBB; padding: 1pt 2pt; }
+                                </style>
+                                <table class="table table-condensed tbl-lv"
+                                       style="font-size:6pt; width:100%; table-layout:fixed; border-collapse:collapse;">
+                                    <thead style="background-color:#4472C4; color:white; font-size:8pt; font-weight:bold;">
+                                        <tr>
+                                            <th class="text-center" style="width:2%">Op.<br/>N°</th>
+                                            <th class="text-center" style="width:5%">Fecha<br/>Factura</th>
+                                            <th class="text-center" style="width:5%">RIF</th>
+                                            <th class="text-left"   style="width:12%">Nombre o<br/>Razón Social</th>
+                                            <th class="text-center" style="width:7%">N° de<br/>Comprobante</th>
+                                            <th class="text-center" style="width:7%">N° de<br/>Factura</th>
+                                            <th class="text-center" style="width:5%">N° de<br/>Control</th>
+                                            <th class="text-center" style="width:3%">N° Nota<br/>Deb.</th>
+                                            <th class="text-center" style="width:3%">N° Nota<br/>Cred.</th>
+                                            <th class="text-center" style="width:3%">Tipo<br/>Tr.</th>
+                                            <th class="text-center" style="width:5%">N° Fact.<br/>Afect.</th>
+                                            <th class="text-right"  style="width:6%">Total<br/>c/IVA</th>
+                                            <th class="text-right"  style="width:5%">V. Int.<br/>No Grav.</th>
+                                            <th class="text-right"  style="width:7%">Base<br/>16%</th>
+                                            <th class="text-right"  style="width:5.5%">IVA<br/>16%</th>
+                                            <th class="text-right"  style="width:5.5%">Base<br/>8%</th>
+                                            <th class="text-right"  style="width:4.5%">IVA<br/>8%</th>
+                                            <th class="text-right"  style="width:6%">IVA Ret.<br/>x Comp.</th>
+                                            <th class="text-right"  style="width:3.5%">IVA<br/>Perc.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <t t-set="facturas" t-value="wizard._get_facturas()"/>
+                                        <t t-set="op_nro"      t-value="0"/>
+                                        <t t-set="tot_total"   t-value="0"/>
+                                        <t t-set="tot_nograv"  t-value="0"/>
+                                        <t t-set="tot_b16"     t-value="0"/>
+                                        <t t-set="tot_iva16"   t-value="0"/>
+                                        <t t-set="tot_b8"      t-value="0"/>
+                                        <t t-set="tot_iva8"    t-value="0"/>
+                                        <t t-set="tot_ret"     t-value="0"/>
+
+                                        <t t-foreach="facturas" t-as="move">
+                                            <t t-set="op_nro" t-value="op_nro + 1"/>
+                                            <t t-set="d" t-value="wizard._compute_line_data(move, op_nro)"/>
+                                            <tr>
+                                                <td class="text-center"><t t-esc="d['op_nro']"/></td>
+                                                <td class="text-center">
+                                                    <t t-esc="d['fecha']"
+                                                       t-options="{&quot;widget&quot;:&quot;date&quot;}"/>
+                                                </td>
+                                                <td class="text-center"><t t-esc="d['rif']"/></td>
+                                                <td><t t-esc="d['cliente']"/></td>
+                                                <td class="text-center"><t t-esc="d['nro_comp']"/></td>
+                                                <td class="text-center"><t t-esc="d['nro_factura']"/></td>
+                                                <td class="text-center"><t t-esc="d['nro_control']"/></td>
+                                                <td class="text-center"><t t-esc="d['nro_nd']"/></td>
+                                                <td class="text-center"><t t-esc="d['nro_nc']"/></td>
+                                                <td class="text-center"><t t-esc="d['tipo_doc']"/></td>
+                                                <td class="text-center"><t t-esc="d['nro_fact_afectada']"/></td>
+                                                <td class="text-right">
+                                                    <t t-esc="d['total_iva']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td class="text-right">
+                                                    <t t-if="d['ventas_no_grav']"
+                                                       t-esc="d['ventas_no_grav']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td class="text-right">
+                                                    <t t-if="d['base_16']"
+                                                       t-esc="d['base_16']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td class="text-right">
+                                                    <t t-if="d['iva_16']"
+                                                       t-esc="d['iva_16']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td class="text-right">
+                                                    <t t-if="d['base_8']"
+                                                       t-esc="d['base_8']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td class="text-right">
+                                                    <t t-if="d['iva_8']"
+                                                       t-esc="d['iva_8']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td class="text-right">
+                                                    <t t-if="d['monto_ret']"
+                                                       t-esc="d['monto_ret']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td class="text-right">
+                                                    <t t-if="d['iva_percibido']"
+                                                       t-esc="d['iva_percibido']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                            </tr>
+                                            <t t-set="tot_total"  t-value="tot_total  + d['total_iva']"/>
+                                            <t t-set="tot_nograv" t-value="tot_nograv + d['ventas_no_grav']"/>
+                                            <t t-set="tot_b16"    t-value="tot_b16    + d['base_16']"/>
+                                            <t t-set="tot_iva16"  t-value="tot_iva16  + d['iva_16']"/>
+                                            <t t-set="tot_b8"     t-value="tot_b8     + d['base_8']"/>
+                                            <t t-set="tot_iva8"   t-value="tot_iva8   + d['iva_8']"/>
+                                            <t t-set="tot_ret"    t-value="tot_ret    + d['monto_ret']"/>
+                                        </t>
+
+                                        <!-- Fila de totales del detalle -->
+                                        <tr style="background-color:#D6E4F0; font-weight:bold; font-size:6.5pt;">
+                                            <td colspan="11" class="text-right">TOTALES</td>
+                                            <td class="text-right">
+                                                <t t-esc="tot_total"
+                                                   t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                            </td>
+                                            <td class="text-right">
+                                                <t t-esc="tot_nograv"
+                                                   t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                            </td>
+                                            <td class="text-right">
+                                                <t t-esc="tot_b16"
+                                                   t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                            </td>
+                                            <td class="text-right">
+                                                <t t-esc="tot_iva16"
+                                                   t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                            </td>
+                                            <td class="text-right">
+                                                <t t-esc="tot_b8"
+                                                   t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                            </td>
+                                            <td class="text-right">
+                                                <t t-esc="tot_iva8"
+                                                   t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                            </td>
+                                            <td class="text-right">
+                                                <t t-esc="tot_ret"
+                                                   t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                            </td>
+                                            <td></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <!-- ── Sección de resumen RLIVA Arts. 70-78 ── -->
+                                <t t-set="smry" t-value="wizard._get_summary()"/>
+                                <div style="margin-top:10pt;">
+                                    <table style="width:70%; margin-left:auto; font-size:7pt; border-collapse:collapse;">
+                                        <thead>
+                                            <tr style="background-color:#2E75B6; color:white;">
+                                                <th style="padding:3pt 4pt; text-align:left; width:50%">Categoría</th>
+                                                <th style="padding:3pt 4pt; text-align:right; width:16%">Base Imponible</th>
+                                                <th style="padding:3pt 4pt; text-align:right; width:16%">Débito Fiscal</th>
+                                                <th style="padding:3pt 4pt; text-align:right; width:18%">IVA Retenido<br/>por el Comprador</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <!-- Ventas Internas No Gravadas -->
+                                            <tr style="background-color:#F0F4FF;">
+                                                <td style="padding:2pt 4pt;">Total: Ventas Internas No Gravadas</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['no_gravadas']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                            </tr>
+                                            <!-- Exportaciones -->
+                                            <tr>
+                                                <td style="padding:2pt 4pt;">Total Ventas de Exportación</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['exportaciones']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                            </tr>
+                                            <!-- Exportaciones afectadas por alícuota -->
+                                            <tr style="background-color:#F0F4FF;">
+                                                <td style="padding:2pt 4pt;">Total Ventas Exportación Afectadas sólo Alícuota General (16%)</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                            </tr>
+                                            <tr>
+                                                <td style="padding:2pt 4pt;">Total Ventas Exportación Afectadas sólo Alícuota Reducida (8%)</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                            </tr>
+                                            <tr style="background-color:#F0F4FF;">
+                                                <td style="padding:2pt 4pt;">Total Ventas Exportación Afectadas Ambas Alícuotas</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">0,00</td>
+                                            </tr>
+                                            <!-- Ventas internas por alícuota -->
+                                            <tr>
+                                                <td style="padding:2pt 4pt;">Total Ventas Internas Afectadas sólo Alícuota General (16%)</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['base_16']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td style="padding:2pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['iva_16']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td style="padding:2pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['ret_16']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                            </tr>
+                                            <tr style="background-color:#F0F4FF;">
+                                                <td style="padding:2pt 4pt;">Total Ventas Internas Afectadas sólo Alícuota Reducida (8%)</td>
+                                                <td style="padding:2pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['base_8']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td style="padding:2pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['iva_8']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td style="padding:2pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['ret_8']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                            </tr>
+                                            <!-- Totales generales -->
+                                            <tr style="background-color:#D6E4F0; font-weight:bold;">
+                                                <td style="padding:3pt 4pt;">TOTALES GENERALES</td>
+                                                <td style="padding:3pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['total_base']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td style="padding:3pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['total_iva']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                                <td style="padding:3pt 4pt; text-align:right;">
+                                                    <t t-esc="smry['total_ret']"
+                                                       t-options="{&quot;widget&quot;:&quot;monetary&quot;,&quot;display_currency&quot;:wizard.company_id.currency_id}"/>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div style="font-size:6.5pt; margin-top:6pt; color:#555;">
+                                    Tipos: 01 = Factura regular &#160;&#183;&#160;
+                                    03 = Nota de Crédito &#160;&#183;&#160;
+                                    04 = Nota de Débito
+                                </div>
+
+                            </div>
+                        </t>
+                    </t>
+                </t>
+            </t>
+        </field>
+    </record>
+
+    <record id="action_report_libro_ventas" model="ir.actions.report">
+        <field name="name">Libro de Ventas</field>
+        <field name="model">ve.wizard.libro.ventas</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">ve_retencion_iva.report_libro_ventas</field>
+        <field name="report_file">ve_retencion_iva.report_libro_ventas</field>
+        <field name="paperformat_id" ref="paperformat_iva_landscape"/>
+    </record>
+
+</odoo>

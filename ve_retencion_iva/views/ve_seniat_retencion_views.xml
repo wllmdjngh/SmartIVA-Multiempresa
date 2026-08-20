@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Vista lista -->
+    <record id="ve_seniat_retencion_view_list" model="ir.ui.view">
+        <field name="name">ve.seniat.retencion.list</field>
+        <field name="model">ve.seniat.retencion</field>
+        <field name="arch" type="xml">
+            <list string="Retenciones SENIAT">
+                <field name="company_id" string="Compa&#xF1;&#xED;a" optional="show"
+                       groups="base.group_multi_company"/>
+                <field name="rif_agente"/>
+                <field name="nombre_agente"/>
+                <field name="nro_control"/>
+                <field name="nro_documento"/>
+                <field name="periodo_retencion"/>
+                <field name="periodo"/>
+                <field name="fecha"/>
+                <field name="monto_base"/>
+                <field name="monto_retenido"/>
+                <field name="estado"
+                       decoration-success="estado == 'conciliado'"
+                       decoration-warning="estado == 'diferencia'"
+                       decoration-danger="estado == 'sin_match'"
+                       decoration-info="estado == 'cargado'"
+                       widget="badge"/>
+                <field name="cargado_por_rpa"/>
+                <field name="fecha_carga"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Vista búsqueda -->
+    <record id="ve_seniat_retencion_view_search" model="ir.ui.view">
+        <field name="name">ve.seniat.retencion.search</field>
+        <field name="model">ve.seniat.retencion</field>
+        <field name="arch" type="xml">
+            <search string="Retenciones SENIAT">
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="rif_agente" string="RIF"/>
+                <field name="nombre_agente" string="Cliente"/>
+                <field name="nro_control"/>
+                <field name="nro_documento"/>
+                <field name="periodo_retencion" string="Per&#xED;odo"/>
+                <filter name="cargado" string="Cargado" domain="[('estado','=','cargado')]"/>
+                <filter name="conciliado" string="Conciliado" domain="[('estado','=','conciliado')]"/>
+                <filter name="diferencia" string="Diferencia" domain="[('estado','=','diferencia')]"/>
+                <filter name="sin_match" string="Sin Match" domain="[('estado','=','sin_match')]"/>
+                <separator/>
+                <!-- Sin context de group_by acá a propósito: el validador de
+                     vista de esta versión de Odoo exige que "group_by" en el
+                     context de un filter sea UN SOLO campo (string), nunca
+                     una lista. Probado en Cementos 2026-08-05, rechaza tanto
+                     lista como string con comas ("Campo desconocido"). Para
+                     agrupar por 2 niveles en un clic se usa el favorito
+                     ve_seniat_retencion_filter_repetido_agrupado (abajo), que
+                     sí acepta lista en su context porque no pasa por ese
+                     validador de filter. -->
+                <filter name="nro_control_repetido" string="N&#xB0; Control con varios N&#xB0; Documento"
+                        domain="[('nro_control_repetido','=',True)]"/>
+                <separator/>
+                <group>
+                    <filter name="gb_company" string="Compa&#xF1;&#xED;a"
+                            context="{'group_by': 'company_id'}"
+                            groups="base.group_multi_company"/>
+                    <filter name="gb_rif" string="RIF"
+                            context="{'group_by': 'rif_agente'}"/>
+                    <filter name="gb_nro_control" string="N&#xB0; Control"
+                            context="{'group_by': 'nro_control'}"/>
+                    <filter name="gb_periodo" string="Per&#xED;odo"
+                            context="{'group_by': 'periodo_retencion'}"/>
+                    <filter name="gb_estado" string="Estado"
+                            context="{'group_by': 'estado'}"/>
+                    <filter name="gb_cliente" string="Cliente"
+                            context="{'group_by': 'nombre_agente'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Vista formulario -->
+    <record id="ve_seniat_retencion_view_form" model="ir.ui.view">
+        <field name="name">ve.seniat.retencion.form</field>
+        <field name="model">ve.seniat.retencion</field>
+        <field name="arch" type="xml">
+            <form string="Retención SENIAT">
+                <sheet>
+                    <group>
+                        <group string="Datos SENIAT">
+                            <field name="rif_agente" readonly="is_locked"/>
+                            <field name="nombre_agente" readonly="is_locked"/>
+                            <field name="periodo_retencion" readonly="is_locked"/>
+                            <field name="periodo" readonly="is_locked"/>
+                            <field name="fecha" readonly="is_locked"/>
+                        </group>
+                        <group string="Montos">
+                            <field name="monto_documento" readonly="is_locked"/>
+                            <field name="monto_base" readonly="is_locked"/>
+                            <field name="monto_exento" readonly="is_locked"/>
+                            <field name="alicuota" readonly="is_locked"/>
+                            <field name="monto_retenido" readonly="is_locked"/>
+                        </group>
+                    </group>
+                    <group string="Datos del Documento">
+                        <group>
+                            <field name="tipo_documento" readonly="is_locked"/>
+                            <field name="nro_documento" readonly="is_locked"/>
+                            <field name="nro_control" readonly="is_locked"/>
+                        </group>
+                        <group>
+                            <field name="doc_afectado" readonly="is_locked"/>
+                        </group>
+                    </group>
+                    <field name="is_locked" invisible="1"/>
+                    <group string="Conciliación">
+                        <field name="estado" widget="badge"
+                               decoration-success="estado == 'conciliado'"
+                               decoration-warning="estado == 'diferencia'"
+                               decoration-danger="estado == 'sin_match'"
+                               decoration-info="estado == 'cargado'"/>
+                        <field name="wh_iva_id"/>
+                        <field name="cargado_por_rpa"/>
+                        <field name="fecha_carga"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Acción -->
+    <record id="ve_seniat_retencion_action" model="ir.actions.act_window">
+        <field name="name">Retenciones SENIAT</field>
+        <field name="res_model">ve.seniat.retencion</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="ve_seniat_retencion_view_search"/>
+        <!-- Explícito en {}: quitar este field (en vez de vaciarlo) NO limpia
+             el valor viejo en la base. Odoo solo escribe los campos presentes en
+             el XML al actualizar, así que un context con search_default_gb_* de
+             una iteración anterior queda pegado para siempre si el field deja
+             de aparecer. Bug real encontrado 2026-08-05 (Cementos): la vista
+             seguía abriendo agrupada Compañía>RIF>N.Control pese a que el XML
+             ya no tenía ese context. -->
+        <field name="context">{}</field>
+    </record>
+
+    <!-- Favorito global (visible para todos, con user_ids vacío en vez de un
+         filtro de usuario individual) con el combo filtro+agrupamiento en 2
+         niveles (RIF, luego N.Control) en un solo clic, dentro del
+         desplegable Filtros/Favoritos de la misma vista. No se puede lograr
+         esto con un filter normal en esta versión de Odoo (ver comentario
+         arriba). -->
+    <record id="ve_seniat_retencion_filter_repetido_agrupado" model="ir.filters">
+        <field name="name">N&#xB0; Control con varios N&#xB0; Documento (agrupado por RIF)</field>
+        <field name="model_id">ve.seniat.retencion</field>
+        <field name="action_id" ref="ve_seniat_retencion_action"/>
+        <field name="domain">[('nro_control_repetido','=',True)]</field>
+        <field name="context">{'group_by': ['rif_agente', 'nro_control']}</field>
+        <field name="user_ids" eval="[(6, 0, [])]"/>
+        <field name="is_default" eval="False"/>
+    </record>
+
+</odoo>

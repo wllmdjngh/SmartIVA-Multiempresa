@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="wizard_declarado_mensual_view_form" model="ir.ui.view">
+        <field name="name">ve.declarado.mensual.wizard.form</field>
+        <field name="model">ve.declarado.mensual.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Cargar Declarado SENIAT por mes">
+                <div class="alert alert-info" role="alert">
+                    Monto que el cliente realmente declar&#xF3; ante el SENIAT cada mes
+                    -- se usa en el gr&#xE1;fico Pendiente/Conciliado/Declarado/SENIAT del
+                    Dashboard Gerencial cuando "Declarado SENIAT: carga manual" est&#xE1;
+                    activo en Configuraci&#xF3;n IVA.
+                </div>
+                <group>
+                    <field name="company_id" groups="base.group_multi_company"/>
+                    <field name="anio"/>
+                </group>
+                <button name="action_cargar" string="Cargar valores de ese a&#xF1;o"
+                        type="object" class="btn-secondary mb-3"
+                        help="Trae lo ya guardado para el A&#xF1;o/Compa&#xF1;&#xED;a de arriba -- &#xFA;sa esto si cambiaste el A&#xF1;o."/>
+                <group col="2">
+                    <group string="1er Semestre">
+                        <field name="ene" string="Enero"/>
+                        <field name="feb" string="Febrero"/>
+                        <field name="mar" string="Marzo"/>
+                        <field name="abr" string="Abril"/>
+                        <field name="may" string="Mayo"/>
+                        <field name="jun" string="Junio"/>
+                    </group>
+                    <group string="2do Semestre">
+                        <field name="jul" string="Julio"/>
+                        <field name="ago" string="Agosto"/>
+                        <field name="sep" string="Septiembre"/>
+                        <field name="oct" string="Octubre"/>
+                        <field name="nov" string="Noviembre"/>
+                        <field name="dic" string="Diciembre"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_guardar" string="Guardar" type="object"
+                            class="btn-primary"/>
+                    <button string="Cancelar" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="wizard_declarado_mensual_action" model="ir.actions.act_window">
+        <field name="name">Cargar Declarado SENIAT</field>
+        <field name="res_model">ve.declarado.mensual.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

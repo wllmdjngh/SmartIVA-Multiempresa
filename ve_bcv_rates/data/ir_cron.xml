@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ir_cron_bcv_rates" model="ir.cron">
+        <field name="name">DJCS_ BCV - Actualizar Tasas de Cambio (USD/EUR)</field>
+        <field name="model_id" ref="base.model_res_currency"/>
+        <field name="state">code</field>
+        <field name="code">model.action_update_bcv_rates()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+        <!-- Hora configurable desde: Ajustes → Técnico → Acciones Programadas -->
+        <field name="nextcall" eval="(datetime.now().replace(hour=8, minute=0, second=0, microsecond=0) + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')"/>
+    </record>
+</odoo>

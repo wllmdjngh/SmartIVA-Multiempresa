@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Vista independiente del Dashboard IVA — cruce cobranza vs. comprobante.
+         No modifica ve_dashboard_iva.py ni sus vistas; si el caso de uso se
+         valida, se puede integrar como bloque del Dashboard más adelante. -->
+
+    <record id="ve_wh_iva_view_list_cobranza" model="ir.ui.view">
+        <field name="name">ve.wh.iva.list.cobranza</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="arch" type="xml">
+            <list string="Cobranza vs. Comprobante"
+                  decoration-danger="estado_cobranza == 'pagado_sin_comprobante'"
+                  decoration-success="estado_cobranza == 'pagado_con_comprobante'"
+                  decoration-muted="estado_cobranza == 'no_pagado'">
+                <field name="company_id"                 string="Compa&#xF1;&#xED;a" optional="show"
+                       groups="base.group_multi_company"/>
+                <field name="partner_id"                string="Cliente"/>
+                <field name="invoice_name"               string="Factura"/>
+                <field name="nro_control"                string="N&#xB0; Control"/>
+                <field name="monto_retenido"             string="Monto Esperado"/>
+                <field name="payment_state"              string="Estado de Pago" widget="badge"
+                       decoration-success="payment_state == 'paid'"
+                       decoration-info="payment_state == 'in_payment'"
+                       decoration-warning="payment_state == 'partial'"
+                       decoration-muted="payment_state == 'not_paid'"/>
+                <field name="estado_recepcion"            string="Estado Recepci&#xF3;n" widget="badge"
+                       decoration-muted="estado_recepcion == 'esperado'"
+                       decoration-info="estado_recepcion in ('recibido', 'recibido_dif')"
+                       decoration-success="estado_recepcion in ('confirmado', 'confirmado_dif')"
+                       decoration-warning="estado_recepcion == 'vencido'"
+                       decoration-danger="estado_recepcion == 'anulado'"/>
+                <field name="estado_cobranza"             string="Cobranza vs. Comprobante" widget="badge"
+                       decoration-danger="estado_cobranza == 'pagado_sin_comprobante'"
+                       decoration-success="estado_cobranza == 'pagado_con_comprobante'"
+                       decoration-muted="estado_cobranza == 'no_pagado'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="ve_wh_iva_view_search_cobranza" model="ir.ui.view">
+        <field name="name">ve.wh.iva.search.cobranza</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="arch" type="xml">
+            <search string="Buscar Cobranza vs. Comprobante">
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="partner_id"/>
+                <field name="invoice_id"/>
+                <field name="nro_control"/>
+                <filter name="pagado_sin_comprobante" string="Pagado sin Comprobante"
+                        domain="[('estado_cobranza','=','pagado_sin_comprobante')]"/>
+                <filter name="pagado_con_comprobante" string="Pagado con Comprobante"
+                        domain="[('estado_cobranza','=','pagado_con_comprobante')]"/>
+                <filter name="no_pagado" string="No Pagado"
+                        domain="[('estado_cobranza','=','no_pagado')]"/>
+                <separator/>
+                <group>
+                    <filter name="group_company" string="Compa&#xF1;&#xED;a"
+                            context="{'group_by': 'company_id'}"
+                            groups="base.group_multi_company"/>
+                    <filter name="group_cobranza" string="Cobranza vs. Comprobante"
+                            context="{'group_by': 'estado_cobranza'}"/>
+                    <filter name="group_partner" string="Cliente"
+                            context="{'group_by': 'partner_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="ve_wh_iva_action_cobranza" model="ir.actions.act_window">
+        <field name="name">Cobranza vs. Comprobante</field>
+        <field name="res_model">ve.wh.iva</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_ids" eval="[(5,0,0),
+            (0,0,{'view_mode':'list','view_id':ref('ve_wh_iva_view_list_cobranza')}),
+            (0,0,{'view_mode':'form','view_id':ref('ve_wh_iva_view_form')})]"/>
+        <field name="search_view_id" ref="ve_wh_iva_view_search_cobranza"/>
+        <field name="context">{'search_default_pagado_sin_comprobante': 1}</field>
+        <field name="domain">[('state', '!=', 'anulado')]</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Cruce entre el estado de pago de la factura y la recepción del comprobante de retención.</p>
+            <p>"Pagado sin comprobante" es el caso de riesgo real: el cliente ya pagó pero el comprobante todavía no llegó.</p>
+        </field>
+    </record>
+
+</odoo>

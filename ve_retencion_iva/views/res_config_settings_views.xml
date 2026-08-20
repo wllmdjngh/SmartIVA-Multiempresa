@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Vista standalone para configurar cuentas IVA Venezuela -->
+    <record id="DJCS_ve_config_iva_form" model="ir.ui.view">
+        <field name="name">ve.retencion.iva.config.form</field>
+        <field name="model">res.config.settings</field>
+        <field name="arch" type="xml">
+            <form string="Configuraci&#xF3;n Retenciones IVA Venezuela">
+                <sheet>
+                    <group string="Cuentas Contables">
+                        <div class="alert alert-info" role="alert">
+                            Seleccione las cuentas que se usar&#xE1;n al confirmar
+                            una retenci&#xF3;n IVA de clientes.
+                        </div>
+                        <field name="cuenta_iva_retenido_cobrar_id"
+                               string="IVA Retenido por Cobrar (D&#xE9;bito)"
+                               required="1"/>
+                        <field name="cuenta_iva_por_pagar_id"
+                               string="IVA por Pagar (Cr&#xE9;dito)"
+                               required="1"/>
+                    </group>
+                    <group string="RPA / AutomationEdge">
+                        <div class="alert alert-info" role="alert">
+                            RIF del "Cliente" en AutomationEdge (normalmente el
+                            RIF del despacho contable que gestiona esta
+                            compa&#xf1;&#xed;a). Vac&#xed;o = esta compa&#xf1;&#xed;a es su
+                            propio Cliente en AET.
+                        </div>
+                        <field name="ve_rif_cliente" string="RIF del Cliente AET"/>
+                    </group>
+                    <group string="Dashboard Gerencial">
+                        <div class="alert alert-info" role="alert">
+                            El gr&#xe1;fico "Pendiente / Conciliado / Declarado / SENIAT"
+                            (a&#xf1;o en curso) puede tomar el monto Declarado de dos
+                            fuentes distintas.
+                        </div>
+                        <field name="ve_declarado_manual"
+                               string="Declarado SENIAT: carga manual (en vez de calcularlo Odoo)"/>
+                    </group>
+                    <group string="Estimador de Riesgo SENIAT">
+                        <div class="alert alert-warning" role="alert">
+                            Par&#xe1;metros usados por el Estimador de Riesgo y el
+                            c&#xe1;lculo de prescripci&#xf3;n de sanciones.
+                        </div>
+                        <field name="ve_es_agente_retencion"/>
+                        <field name="ve_sancion_por_comprobante_bs"
+                               string="Sanci&#xf3;n/Comprobante (Bs)"/>
+                        <field name="ve_porcentaje_omision"
+                               string="% Omisi&#xf3;n (Art. 111 COT)"/>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="execute" string="Guardar" type="object" class="btn-primary"/>
+                    <button string="Cancelar" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="DJCS_action_ve_config_iva" model="ir.actions.act_window">
+        <field name="name">Configuraci&#xF3;n IVA Venezuela</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="DJCS_ve_config_iva_form"/>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="ve_enviar_recordatorio_wizard_view_form" model="ir.ui.view">
+        <field name="name">ve.enviar.recordatorio.wizard.form</field>
+        <field name="model">ve.enviar.recordatorio.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Enviar Recordatorio">
+                <sheet>
+                    <field name="wh_iva_id" invisible="1"/>
+                    <field name="tipo" invisible="1"/>
+                    <group>
+                        <field name="partner_id" readonly="1"/>
+                        <field name="contacto_id" placeholder="Elegir contacto existente, o dejar vacío para uno nuevo..."/>
+                        <field name="contacto_nombre" string="Nombre del Contacto"/>
+                        <field name="phone" widget="phone"/>
+                        <field name="email" widget="email"/>
+                        <field name="asunto" readonly="1"/>
+                    </group>
+                    <div class="alert alert-warning" role="alert" invisible="email">
+                        Este cliente no tiene email configurado — el recordatorio quedará
+                        registrado solo en la bitácora interna, no se enviará correo.
+                    </div>
+                    <field name="mensaje" nolabel="1"/>
+                </sheet>
+                <footer>
+                    <button name="action_confirmar"
+                            string="Enviar Recordatorio"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Cancelar" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

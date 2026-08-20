@@ -1,0 +1,912 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══════════════════════════════════════════════════════════
+         Vista lista
+    ══════════════════════════════════════════════════════════ -->
+    <record id="ve_wh_iva_view_list" model="ir.ui.view">
+        <field name="name">ve.wh.iva.list</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="arch" type="xml">
+            <list string="Retenciones IVA Clientes"
+                  decoration-muted="estado_recepcion == 'anulado'"
+                  decoration-warning="estado_recepcion == 'vencido'"
+                  decoration-success="estado_recepcion in ('confirmado', 'confirmado_dif')"
+                  decoration-info="estado_recepcion in ('recibido', 'recibido_dif')">
+                <field name="company_id" string="Compa&#xF1;&#xED;a" optional="show"
+                       groups="base.group_multi_company"/>
+                <field name="ref"  string="Ref." optional="show"/>
+                <field name="name" string="N° Comprobante"/>
+                <field name="estado_recepcion" string="Recepci&#xf3;n" widget="badge"
+                       decoration-muted="estado_recepcion == 'esperado'"
+                       decoration-info="estado_recepcion in ('recibido', 'recibido_dif')"
+                       decoration-success="estado_recepcion in ('confirmado', 'confirmado_dif')"
+                       decoration-warning="estado_recepcion == 'vencido'"
+                       decoration-danger="estado_recepcion == 'anulado'"/>
+                <field name="estado_conciliacion" string="Estado Conciliaci&#xf3;n" widget="badge"
+                       decoration-success="estado_conciliacion == 'conciliada'"
+                       decoration-warning="estado_conciliacion == 'diferencia'"
+                       decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                       decoration-danger="estado_conciliacion == 'solo_odoo'"
+                       decoration-info="estado_conciliacion == 'solo_seniat'"
+                       optional="show"/>
+                <field name="estado_declaracion" string="Declaraci&#xf3;n" widget="badge"
+                       decoration-success="estado_declaracion == 'declarado'"
+                       decoration-muted="estado_declaracion == 'no_declarado'"
+                       optional="show"/>
+                <field name="partner_id" string="Cliente / Agente de Retención"/>
+                <field name="zona" string="Zona/Planta" optional="show"/>
+                <field name="invoice_name" string="Factura"/>
+                <field name="nro_control" string="N&#xB0; Control" optional="show"/>
+                <field name="payment_state" string="Estado Pago" widget="badge" optional="show"
+                       decoration-success="payment_state == 'paid'"
+                       decoration-info="payment_state == 'in_payment'"
+                       decoration-warning="payment_state == 'partial'"
+                       decoration-muted="payment_state == 'not_paid'"/>
+                <field name="periodo_retencion" string="Periodo Declaraci&#xf3;n"/>
+                <field name="fecha" string="Fecha Recibido"/>
+                <field name="fecha_vencimiento_entrega" string="Límite Entrega"
+                       optional="show"/>
+                <field name="fuera_plazo" optional="show"/>
+                <field name="monto_base" string="Base 16%" optional="show"/>
+                <field name="monto_iva" string="IVA 16%" optional="show"/>
+                <field name="monto_base_red" string="Base 8%" optional="show"/>
+                <field name="monto_iva_red" string="IVA 8%" optional="show"/>
+                <field name="porcentaje_retencion" string="% Ret." optional="show"/>
+                <field name="monto_retenido"/>
+                <field name="monto_retenido_archivo" string="Monto Retenido (Archivo)" optional="hide"/>
+                <field name="diferencia_vs_archivo" string="Diferencia vs. Archivo" optional="hide"
+                       decoration-danger="diferencia_vs_archivo != 0"/>
+                <field name="canal_recepcion" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Búsqueda con agrupación para "Dif. Retención", pedido 2026-08-14:
+         que se pueda filtrar/agrupar (por Cliente o Contribuyente Especial)
+         además de ver el total, no solo la lista plana. -->
+    <record id="ve_wh_iva_view_search_diferencias_archivo" model="ir.ui.view">
+        <field name="name">ve.wh.iva.search.diferencias.archivo</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="arch" type="xml">
+            <search string="Buscar Diferencias vs. Archivo">
+                <field name="partner_id"/>
+                <field name="rif"/>
+                <field name="invoice_name"/>
+                <group>
+                    <filter name="group_partner" string="Cliente" context="{'group_by': 'partner_id'}"/>
+                    <filter name="group_agente" string="Contribuyente Especial" context="{'group_by': 'es_agente_retencion'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Vista dedicada (independiente, no heredada) para el botón "Ver
+         Facturas con Diferencia" de la carga del Libro de Ventas — enfocada
+         solo en identificar rápido el problema (Archivo vs. Odoo), sin las
+         columnas de flujo de recepción/conciliación/declaración/pago que
+         no aportan nada acá. Si hay diferencia, el detalle por alícuota
+         (16%/8%) está en la ficha de la retención. Pedido explícito
+         2026-08-05. -->
+    <record id="ve_wh_iva_view_list_diferencias_archivo" model="ir.ui.view">
+        <field name="name">ve.wh.iva.list.diferencias.archivo</field>
+        <field name="model">ve.wh.iva</field>
+        <!-- Explícito en False: esta vista fue heredada (inherit_id) en un
+             deploy anterior, antes de reescribirse como lista independiente.
+             Quitar el field inherit_id del XML NO borra el valor viejo en
+             la base: Odoo solo escribe los campos presentes al actualizar
+             (mismo bug real ya visto hoy 2026-08-05 con el context de
+             ve_seniat_retencion_action). Sin este False explícito, el arch
+             de lista completa queda huérfano con un inherit_id viejo y el
+             validador de vistas lo rechaza ("Element cannot be located in
+             parent view"), lo que tumbó el build. -->
+        <field name="inherit_id" eval="False"/>
+        <field name="arch" type="xml">
+            <list string="Facturas con Diferencia" class="o_list_diferencias_archivo">
+                <header>
+                    <button name="action_enviar_recordatorios_normal_seleccion"
+                            string="Enviar Recordatorio — Comprobante"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-envelope"/>
+                    <button name="action_enviar_recordatorios_seniat_seleccion"
+                            string="Enviar Recordatorio — SENIAT"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-envelope"/>
+                    <button name="action_aceptar_monto_archivo_multi"
+                            string="Aceptar Monto del Archivo"
+                            type="object"
+                            class="btn-primary"
+                            icon="fa-check"
+                            confirm="Se va a ajustar el % Retención de las seleccionadas para que el Monto Esperado coincida con el Monto Retenido del archivo (se omiten en silencio las que no tengan diferencia real). ¿Confirmar?"/>
+                </header>
+                <field name="partner_id" string="Cliente"/>
+                <field name="rif" string="RIF"/>
+                <field name="es_agente_retencion" string="Contribuyente Especial" widget="boolean"/>
+                <field name="nro_control" string="N&#xB0; Control"/>
+                <field name="invoice_name" string="Factura"/>
+                <!-- Primero lo leído del archivo (Libro de Ventas), luego lo
+                     calculado por Odoo, pedido explícito 2026-08-06. Clase
+                     CSS por columna para diferenciarlas a simple vista (ver
+                     seniat_periodo_list.css). -->
+                <field name="monto_iva_archivo" string="Monto IVA (Archivo)" sum="Total"/>
+                <field name="monto_retenido_archivo" string="Monto Retenido (Archivo)" sum="Total"/>
+                <field name="base_imponible_total" string="Base Imponible" sum="Total"/>
+                <field name="monto_iva_total" string="Monto IVA (Odoo)" sum="Total"/>
+                <field name="porcentaje_retencion" string="% Retenci&#xF3;n"/>
+                <field name="monto_retenido" string="Monto Retenci&#xF3;n (Odoo)" sum="Total"/>
+                <field name="diferencia_vs_archivo" string="Diferencia" sum="Total"
+                       decoration-danger="diferencia_vs_archivo != 0"/>
+                <field name="pct_diferencia_archivo" string="% Diferencia"
+                       decoration-danger="diferencia_vs_archivo != 0"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══ Conciliadas por normalización (RIF+Control/Factura tras quitar ceros/guiones) ══ -->
+    <record id="ve_wh_iva_view_list_normalizadas" model="ir.ui.view">
+        <field name="name">ve.wh.iva.list.normalizadas</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="inherit_id" eval="False"/>
+        <field name="arch" type="xml">
+            <list string="Retenciones Conciliadas por Normalización" class="o_list_normalizadas" create="0">
+                <!-- Retención Esperada (Odoo) a la izquierda -->
+                <field name="ref" string="Ref."/>
+                <field name="rif" string="RIF"/>
+                <field name="partner_id" string="Cliente"/>
+                <field name="nro_control" string="N&#xB0; Control"/>
+                <field name="nro_factura_match" string="N&#xB0; Factura"/>
+                <field name="name" string="N&#xB0; Comprobante"/>
+                <field name="monto_retenido" string="Monto Esperado" sum="Total"/>
+                <!-- SENIAT a la derecha -->
+                <field name="seniat_rif" string="RIF SENIAT"/>
+                <field name="seniat_nro_control" string="N&#xB0; Control SENIAT"/>
+                <field name="seniat_nro_documento" string="N&#xB0; Doc SENIAT"/>
+                <field name="monto_seniat" string="Monto SENIAT" sum="Total"/>
+                <field name="diferencia_monto" string="Diferencia" sum="Total"
+                       decoration-danger="diferencia_monto != 0"/>
+                <field name="nivel_match" string="Nivel Match" widget="badge"/>
+                <!-- Botones de Estado -->
+                <field name="estado_recepcion" string="Recepci&#xF3;n" widget="badge"
+                       decoration-muted="estado_recepcion == 'esperado'"
+                       decoration-info="estado_recepcion in ('recibido', 'recibido_dif')"
+                       decoration-success="estado_recepcion in ('confirmado', 'confirmado_dif')"
+                       decoration-warning="estado_recepcion == 'vencido'"
+                       decoration-danger="estado_recepcion == 'anulado'"/>
+                <field name="estado_conciliacion" string="Conciliaci&#xF3;n SENIAT" widget="badge"
+                       decoration-muted="estado_conciliacion in ('pendiente', 'solo_odoo', 'solo_seniat')"
+                       decoration-warning="estado_conciliacion == 'diferencia'"
+                       decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                       decoration-success="estado_conciliacion in ('listo_declarar', 'conciliada', 'declarado', 'aprobado_declarar')"/>
+                <field name="estado_declaracion" string="Declaraci&#xF3;n" widget="badge"
+                       decoration-muted="estado_declaracion == 'no_declarado'"
+                       decoration-success="estado_declaracion == 'declarado'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══ Retenciones existentes en clientes NO marcados Agente (caso inverso a Sin Retención) ══ -->
+    <record id="ve_wh_iva_view_list_no_spe" model="ir.ui.view">
+        <field name="name">ve.wh.iva.list.no.spe</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="inherit_id" eval="False"/>
+        <field name="arch" type="xml">
+            <list string="Retenciones en clientes no SPE" class="o_list_ret_no_spe" create="0">
+                <field name="partner_id" string="Cliente"/>
+                <field name="rif" string="RIF"/>
+                <field name="es_agente_retencion" string="Contribuyente Especial" widget="boolean"/>
+                <field name="nro_control" string="N&#xB0; Control"/>
+                <field name="invoice_name" string="Factura"/>
+                <field name="periodo" string="Per&#xED;odo"/>
+                <field name="monto_retenido" string="Monto Retenci&#xF3;n (Odoo)" sum="Total"/>
+                <field name="state" string="Estado" widget="badge"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════
+         Vista formulario
+    ══════════════════════════════════════════════════════════ -->
+    <record id="ve_wh_iva_view_form" model="ir.ui.view">
+        <field name="name">ve.wh.iva.form</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="arch" type="xml">
+            <form string="Retención IVA">
+                <header>
+                    <!-- Botones de ciclo de vida -->
+                    <button name="action_recibir"
+                            string="Marcar como Recibido"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state not in ('esperado','vencido')"/>
+                    <button name="action_confirmar"
+                            string="Confirmar"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'borrador'"
+                            groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+                    <button name="action_anular"
+                            string="Anular"
+                            type="object"
+                            class="btn-danger"
+                            invisible="state not in ('esperado','borrador','confirmado')"
+                            groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"
+                            confirm="¿Está seguro? Primero llene el Motivo de Anulación abajo, luego haga clic aquí."/>
+                    <button name="action_enviar_recordatorio"
+                            string="Enviar Recordatorio"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-envelope"
+                            invisible="not necesita_envio_comp and not necesita_aclarar_dif_seniat and not necesita_reportar_seniat"/>
+                    <button name="action_subir_comprobante"
+                            string="Adjuntar Comprobante"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-paperclip"
+                            invisible="state not in ('esperado','vencido','borrador') and not declarado_sin_comprobante"/>
+                    <button name="action_aceptar_monto_archivo"
+                            string="Aceptar Monto del Archivo"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-check"
+                            confirm="Se va a ajustar el % Retención para que el Monto Esperado coincida con el Monto Retenido del Libro de Ventas. ¿Confirmar?"
+                            invisible="not viene_de_libro_ventas or not diferencia_vs_archivo or is_locked"/>
+
+                    <!-- Barra de estado principal — Eje 1 (Recepción). El
+                         "c/Dif" y los Ejes 2/3 (Conciliación SENIAT,
+                         Declaración) se muestran como badges separados justo
+                         debajo del título, no en esta barra. -->
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="esperado,borrador,confirmado"/>
+                </header>
+
+                <sheet>
+                    <!-- Banner anulado -->
+                    <div class="alert alert-danger"
+                         invisible="state != 'anulado'"
+                         role="alert">
+                        <strong>COMPROBANTE ANULADO</strong>
+                        — Anulado por
+                        <field name="anulado_por" readonly="1" nolabel="1"
+                               class="d-inline"/>
+                        &#160;|&#160; Motivo:
+                        <field name="motivo_anulacion" readonly="1" nolabel="1"
+                               class="d-inline"/>
+                    </div>
+
+                    <!-- Banner fuera de plazo -->
+                    <div class="alert alert-warning"
+                         invisible="not fuera_plazo"
+                         role="alert">
+                        <strong>Recibido fuera de plazo legal</strong>
+                        — Este comprobante aplica en el período de recepción,
+                        no en el de la factura.
+                    </div>
+
+                    <!-- Banner N° Control faltante -->
+                    <div class="alert alert-warning"
+                         invisible="state != 'borrador' or nro_control"
+                         role="alert">
+                        <i class="fa fa-exclamation-triangle" title="Advertencia"/>&#160;
+                        <strong>Falta N° Control</strong> — El comprobante no puede confirmarse sin N° Control.
+                    </div>
+
+                    <!-- Banner Declarado sin Comprobante — se incluyó en C.66 y ya se
+                         presentó al SENIAT sin que el papel físico llegara nunca.
+                         Estado Conciliación (más abajo) dice si el SENIAT la
+                         reporta o no; este banner es independiente de eso. -->
+                    <div class="alert alert-warning"
+                         invisible="not declarado_sin_comprobante or comp_monto_retenido"
+                         role="alert">
+                        <i class="fa fa-exclamation-triangle" title="Advertencia"/>&#160;
+                        <strong>Declarado sin Comprobante Físico</strong>
+                        — Esta retención ya se presentó al SENIAT (C.66), pero el
+                        comprobante físico nunca llegó. Seguir gestionando su
+                        obtención — use "Adjuntar Comprobante" cuando llegue,
+                        sin que eso afecte el período ya declarado.
+                        <span invisible="estado_conciliacion != 'diferencia'">
+                            &#160;Además, el SENIAT reporta un monto distinto: declarado
+                            <field name="monto_retenido" readonly="1" nolabel="1" class="d-inline"/> Bs.
+                            &#160;|&#160; SENIAT: <field name="monto_seniat" readonly="1" nolabel="1" class="d-inline"/> Bs.
+                        </span>
+                    </div>
+                    <div class="alert alert-info"
+                         invisible="not declarado_sin_comprobante or not comp_monto_retenido"
+                         role="alert">
+                        <i class="fa fa-info-circle" title="Información"/>&#160;
+                        <strong>Comprobante recibido tarde</strong>
+                        — Esta retención se declaró (C.66) sin comprobante físico; el papel llegó después.
+                        Monto declarado: <field name="monto_retenido" readonly="1" nolabel="1" class="d-inline"/> Bs.
+                        &#160;|&#160; Monto del comprobante: <field name="comp_monto_retenido" readonly="1" nolabel="1" class="d-inline"/> Bs.
+                        Si no coinciden, evalúe si amerita una Declaración Sustitutiva.
+                        <span invisible="estado_conciliacion != 'diferencia'">
+                            &#160;El SENIAT también reporta un monto distinto:
+                            <field name="monto_seniat" readonly="1" nolabel="1" class="d-inline"/> Bs.
+                        </span>
+                    </div>
+
+                    <!-- Banner Dif Cliente — el comprobante físico recibido
+                         (borrador o confirmado) no coincide con el monto
+                         esperado por SmartIVA. Antes solo se veía en el
+                         chatter (mensaje del wizard de carga) y en el badge
+                         de las listas — la ficha individual no mostraba
+                         ninguna alerta. -->
+                    <div class="alert alert-warning"
+                         invisible="estado_recepcion not in ('recibido_dif', 'confirmado_dif')"
+                         role="alert">
+                        <i class="fa fa-exclamation-triangle" title="Advertencia"/>&#160;
+                        <strong>Diferencia de monto con el comprobante físico</strong>
+                        — Monto esperado (SmartIVA): <field name="monto_retenido" readonly="1" nolabel="1" class="d-inline"/> Bs.
+                        &#160;|&#160; Monto del comprobante: <field name="comp_monto_retenido" readonly="1" nolabel="1" class="d-inline"/> Bs.
+                        Revise con el cliente antes de confirmar/declarar.
+                    </div>
+
+                    <!-- Banner Monto del Archivo aceptado, pedido explícito
+                         2026-08-06: dejar visible en la ficha que el % de
+                         retención no es el que calculó Odoo por regla legal,
+                         sino uno ajustado a mano para que cuadre con el
+                         Libro de Ventas (ver action_aceptar_monto_archivo). -->
+                    <div class="alert alert-info"
+                         invisible="not diferencia_archivo_aceptada"
+                         role="alert">
+                        <i class="fa fa-info-circle" title="Información"/>&#160;
+                        <strong>Retención ajustada por el usuario a los montos cargados del Libro de Ventas</strong>
+                        — % Retención: <field name="porcentaje_retencion" readonly="1" nolabel="1" class="d-inline"/>%
+                        &#160;|&#160; Monto Retenido: <field name="monto_retenido" readonly="1" nolabel="1" class="d-inline"/> Bs.
+                        Ver detalle en el chatter.
+                    </div>
+
+                    <div class="oe_title">
+                        <h1><field name="ref" readonly="1" placeholder="RET/YYYY/NNNN"/></h1>
+                        <!-- Los 3 ejes de estado, cada uno su propio badge —
+                             reemplaza el badge único combinado (estado_visual)
+                             de antes. -->
+                        <div class="o_row">
+                            <field name="estado_recepcion" widget="badge" readonly="1"
+                                   decoration-muted="estado_recepcion == 'esperado'"
+                                   decoration-info="estado_recepcion == 'recibido'"
+                                   decoration-success="estado_recepcion == 'confirmado'"
+                                   decoration-warning="estado_recepcion in ('vencido', 'recibido_dif', 'confirmado_dif')"
+                                   decoration-danger="estado_recepcion == 'anulado'"/>
+                            <field name="estado_conciliacion" widget="badge" readonly="1"
+                                   decoration-muted="estado_conciliacion in ('pendiente', 'solo_odoo', 'solo_seniat')"
+                                   decoration-warning="estado_conciliacion == 'diferencia'"
+                                   decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                                   decoration-success="estado_conciliacion in ('listo_declarar', 'conciliada', 'declarado', 'aprobado_declarar')"/>
+                            <field name="estado_declaracion" widget="badge" readonly="1"
+                                   decoration-muted="estado_declaracion == 'no_declarado'"
+                                   decoration-success="estado_declaracion == 'declarado'"/>
+                        </div>
+                    </div>
+
+                    <!-- ── SECCIÓN 1: datos del ERP / factura ───────────────── -->
+                    <group>
+                        <group string="Datos de la Factura">
+                            <field name="invoice_id"
+                                   readonly="1"
+                                   string="Factura vinculada"/>
+                            <field name="nro_control"
+                                   readonly="1"
+                                   string="N&#xB0; Control"/>
+                            <field name="partner_id"
+                                   string="Cliente / Agente de Retenci&#xF3;n"
+                                   readonly="1"/>
+                            <field name="payment_state" string="Estado Pago" widget="badge" readonly="1"
+                                   decoration-success="payment_state == 'paid'"
+                                   decoration-info="payment_state == 'in_payment'"
+                                   decoration-warning="payment_state == 'partial'"
+                                   decoration-muted="payment_state == 'not_paid'"/>
+                            <field name="rif"/>
+                            <field name="periodo"
+                                   readonly="1"
+                                   placeholder="yyyy-mm"/>
+                            <field name="fecha_vencimiento_entrega" readonly="1"/>
+                        </group>
+                        <group string="Retenci&#xF3;n Esperada">
+                            <field name="monto_base"          readonly="1" string="Base 16%"/>
+                            <field name="monto_iva"           readonly="1" string="IVA 16%"/>
+                            <field name="monto_base_red"      readonly="1" string="Base 8%"/>
+                            <field name="monto_iva_red"       readonly="1" string="IVA 8%"/>
+                            <field name="monto_exento"        readonly="1"/>
+                            <field name="monto_base_nogravado" readonly="1"/>
+                            <field name="porcentaje_retencion" readonly="1"/>
+                            <field name="monto_retenido"      readonly="1"/>
+                        </group>
+                    </group>
+
+                    <!-- ── SECCIÓN 2: comprobante físico del cliente ───────── -->
+                    <group string="Comprobante Recibido del Cliente">
+                        <group string="Datos del Comprobante">
+                            <field name="company_id"
+                                   groups="base.group_multi_company"
+                                   readonly="id"/>
+                            <field name="name"
+                                   string="N&#xB0; Comprobante"
+                                   readonly="is_locked"
+                                   placeholder="14 d&#xED;gitos num&#xE9;ricos"/>
+                            <field name="nro_documento"   readonly="is_locked"
+                                   string="N&#xB0; Factura (Comprobante)"
+                                   placeholder="n&#xFA;mero de factura"/>
+                            <field name="nro_control"     readonly="is_locked"
+                                   string="N&#xB0; Control (Comprobante)"
+                                   placeholder="00-XXXXXXX"/>
+                            <field name="fecha"           readonly="is_locked"/>
+                            <field name="fuera_plazo"     readonly="1"/>
+                            <field name="tipo_documento"  readonly="is_locked"/>
+                            <field name="doc_afectado"    readonly="is_locked"/>
+                            <field name="comprobante_recibido" readonly="1"/>
+                            <field name="canal_recepcion" readonly="is_locked"/>
+                            <field name="monto_recibido"  readonly="1"/>
+                        </group>
+                        <group string="Montos seg&#xFA;n Comprobante">
+                            <field name="comp_base_16"        readonly="is_locked"/>
+                            <field name="comp_iva_16"         readonly="is_locked"/>
+                            <field name="comp_base_8"         readonly="is_locked"/>
+                            <field name="comp_iva_8"          readonly="is_locked"/>
+                            <field name="comp_base_exento"    readonly="is_locked"/>
+                            <field name="comp_base_nogravado" readonly="is_locked"/>
+                            <field name="comp_monto_retenido" readonly="is_locked"/>
+                        </group>
+                    </group>
+
+                    <!-- Asiento contable (solo si existe) -->
+                    <group string="Contabilidad"
+                           invisible="not asiento_id">
+                        <field name="asiento_id" readonly="1"/>
+                    </group>
+
+                    <!-- Anulación -->
+                    <separator string="Anulaci&#xF3;n"
+                               invisible="state not in ('esperado','borrador','confirmado','anulado')"/>
+                    <field name="motivo_anulacion"
+                           nolabel="1"
+                           placeholder="Indique el motivo antes de hacer clic en 'Anular'&#x2026;"
+                           readonly="state == 'anulado'"
+                           invisible="state not in ('esperado','borrador','confirmado','anulado')"/>
+                    <group invisible="state != 'anulado'">
+                        <field name="anulado_por" readonly="1"/>
+                    </group>
+
+                    <!-- Conciliación SENIAT -->
+                    <group string="Conciliaci&#xF3;n SENIAT">
+                        <field name="estado_conciliacion" readonly="1"
+                               widget="badge"
+                               decoration-success="estado_conciliacion == 'conciliada'"
+                               decoration-warning="estado_conciliacion == 'diferencia'"
+                               decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                               decoration-danger="estado_conciliacion == 'solo_odoo'"
+                               decoration-info="estado_conciliacion == 'solo_seniat'"/>
+                        <field name="declarado_sin_comprobante" readonly="1"/>
+                        <field name="periodo_retencion" readonly="1"/>
+                        <field name="conciliacion_id"   readonly="1"/>
+                        <field name="monto_seniat"      readonly="1"/>
+                        <field name="fecha_conciliacion" readonly="1"/>
+                    </group>
+
+                    <group string="Notas" col="1">
+                        <field name="notas" nolabel="1"/>
+                    </group>
+                </sheet>
+
+                <!-- Campos auxiliares para condiciones de vista -->
+                <field name="is_locked"     invisible="1"/>
+                <field name="diferencia_vs_archivo" invisible="1"/>
+                <field name="viene_de_libro_ventas" invisible="1"/>
+                <field name="diferencia_archivo_aceptada" invisible="1"/>
+
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════
+         Vista Búsqueda
+    ══════════════════════════════════════════════════════════ -->
+    <record id="ve_wh_iva_view_search" model="ir.ui.view">
+        <field name="name">ve.wh.iva.search</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="arch" type="xml">
+            <search string="Buscar Retenciones IVA">
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="rif" string="RIF"/>
+                <field name="zona" string="Zona/Planta"/>
+                <filter name="solo_odoo"
+                        string="Solo SmartIVA"
+                        domain="[('estado_conciliacion','=','solo_odoo')]"/>
+                <filter name="diferencia"
+                        string="Diferencia"
+                        domain="[('estado_conciliacion','=','diferencia')]"/>
+                <filter name="concil_norec"
+                        string="Concil. NoRec"
+                        domain="[('estado_conciliacion','=','conciliada_norec')]"/>
+                <filter name="listo_declarar"
+                        string="Listo Declarar"
+                        domain="[('estado_conciliacion','=','listo_declarar')]"/>
+                <filter name="no_recibido"
+                        string="No Recibidos"
+                        domain="[('state','=','esperado')]"/>
+                <filter name="recibidos"
+                        string="Recibidos"
+                        domain="[('state','=','borrador')]"/>
+                <filter name="confirmados"
+                        string="Confirmados"
+                        domain="[('state','=','confirmado')]"/>
+                <filter name="vencidos"
+                        string="Vencidos"
+                        domain="[('state','=','vencido')]"/>
+                <filter name="c66"
+                        string="Incluidos C.66"
+                        domain="[('incluir_declaracion','=',1)]"/>
+                <separator/>
+                <filter name="pago_pagado"
+                        string="Factura Pagada"
+                        domain="[('payment_state','in',('paid','in_payment'))]"/>
+                <filter name="pago_no_pagado"
+                        string="Factura No Pagada"
+                        domain="[('payment_state','=','not_paid')]"/>
+                <separator/>
+                <filter name="dif_archivo"
+                        string="Diferencia vs. Archivo"
+                        domain="[('diferencia_vs_archivo','!=',0)]"/>
+                <filter name="sin_nro_control"
+                        string="Sin N&#xB0; Control"
+                        domain="[('nro_control','=',False)]"/>
+                <group>
+                    <filter name="gb_company"
+                            string="Por Compa&#xF1;&#xED;a"
+                            context="{'group_by': 'company_id'}"
+                            groups="base.group_multi_company"/>
+                    <filter name="gb_conciliacion"
+                            string="Por Período Fiscal"
+                            context="{'group_by': 'periodo'}"/>
+                    <filter name="gb_partner"
+                            string="Por Cliente"
+                            context="{'group_by': 'partner_id'}"/>
+                    <filter name="gb_zona"
+                            string="Por Zona/Planta"
+                            context="{'group_by': 'zona'}"/>
+                    <filter name="gb_state"
+                            string="Por Estado"
+                            context="{'group_by': 'state'}"/>
+                    <filter name="gb_concil"
+                            string="Por Conciliacion"
+                            context="{'group_by': 'estado_conciliacion'}"/>
+                    <filter name="gb_pago"
+                            string="Por Estado Pago"
+                            context="{'group_by': 'payment_state'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════
+         Vista lista Visual IVA Clientes (standalone)
+    ══════════════════════════════════════════════════════════ -->
+    <record id="ve_wh_iva_view_concil_list" model="ir.ui.view">
+        <field name="name">ve.wh.iva.concil.list</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="priority" eval="999"/>
+        <field name="arch" type="xml">
+            <list string="Visual IVA Clientes"
+                  editable="top"
+                  default_order="conciliacion_id desc, monto_retenido desc"
+                  delete="0">
+                <field name="company_id"      string="Compa&#xF1;&#xED;a" optional="show" readonly="1"
+                       groups="base.group_multi_company"/>
+                <field name="conciliacion_id" string="Per&#xED;odo"         optional="show"  readonly="1"/>
+                <field name="invoice_name"    string="Factura"              optional="show"  readonly="1"/>
+                <field name="partner_id"      string="Cliente"                               readonly="1"/>
+                <field name="payment_state"   string="Estado Pago"          optional="show"  readonly="1" widget="badge"
+                       decoration-success="payment_state == 'paid'"
+                       decoration-info="payment_state == 'in_payment'"
+                       decoration-warning="payment_state == 'partial'"
+                       decoration-muted="payment_state == 'not_paid'"/>
+                <field name="rif"                                            optional="hide"  readonly="1"/>
+                <field name="fecha"           string="Fecha Rec."           optional="show"  readonly="1"/>
+                <field name="name"            string="N&#xB0; Comprobante"                  readonly="1"/>
+                <field name="monto_retenido"  string="Esperado"             sum="Total Esperado" readonly="1"/>
+                <field name="monto_recibido"  string="Recibido"             sum="Total Recibido" optional="show" readonly="1"/>
+                <field name="comp_monto_retenido" string="Comp. F&#xED;sico" optional="hide" readonly="1"/>
+                <field name="monto_seniat"    string="SENIAT"               sum="Total SENIAT" optional="show" readonly="1"/>
+                <field name="incluir_declaracion" string="C.66"
+                       widget="boolean"
+                       readonly="estado_declaracion == 'declarado'"/>
+                <field name="monto_c66"       string="Monto C.66"           sum="Total C.66"   readonly="1"/>
+                <field name="estado_recepcion" string="Recepci&#xf3;n" widget="badge" readonly="1"
+                       decoration-muted="estado_recepcion == 'esperado'"
+                       decoration-info="estado_recepcion == 'recibido'"
+                       decoration-success="estado_recepcion == 'confirmado'"
+                       decoration-warning="estado_recepcion in ('vencido', 'recibido_dif', 'confirmado_dif')"
+                       decoration-danger="estado_recepcion == 'anulado'"/>
+                <field name="estado_conciliacion" string="Conciliaci&#xf3;n SENIAT" widget="badge" readonly="1"
+                       decoration-muted="estado_conciliacion in ('pendiente', 'solo_odoo', 'solo_seniat')"
+                       decoration-warning="estado_conciliacion == 'diferencia'"
+                       decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                       decoration-success="estado_conciliacion in ('listo_declarar', 'conciliada', 'declarado', 'aprobado_declarar')"/>
+                <field name="estado_declaracion" string="Declaraci&#xf3;n" widget="badge" readonly="1"
+                       decoration-muted="estado_declaracion == 'no_declarado'"
+                       decoration-success="estado_declaracion == 'declarado'"/>
+                <button name="action_abrir_form"
+                        string="Abrir" type="object" icon="fa-external-link"
+                        class="btn-sm btn-link" title="Abrir comprobante"/>
+                <button name="action_abrir_registrar_llamada"
+                        type="object" icon="fa-phone"
+                        class="btn-sm btn-outline-primary"
+                        title="Registrar llamada al contacto"/>
+                <button name="action_recordatorio_envio_comp"
+                        type="object" icon="fa-envelope"
+                        class="btn-sm btn-secondary"
+                        title="Pedir env&#xED;o del comprobante"
+                        invisible="not necesita_envio_comp"/>
+                <button name="action_recordatorio_dif_seniat"
+                        type="object" icon="fa-exclamation-triangle"
+                        class="btn-sm btn-warning"
+                        title="Aclarar diferencia de monto con SENIAT"
+                        invisible="not necesita_aclarar_dif_seniat"/>
+                <button name="action_recordatorio_rep_seniat"
+                        type="object" icon="fa-flag"
+                        class="btn-sm btn-danger"
+                        title="El agente debe reportar la retenci&#xF3;n a SENIAT"
+                        invisible="not necesita_reportar_seniat"/>
+                <field name="fuera_plazo"                                   optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════
+         Pivot/Gráfico por Zona — pedido explícito 2026-08-01: cliente
+         con varias plantas bajo un único RIF, necesita ver cuánto
+         crédito fiscal puede recuperar y dónde enfocar el seguimiento
+         POR ZONA. Se apoya en el motor nativo de reportes de Odoo
+         (Pivot/Gráfico) en vez de un widget custom — mismo dato ya
+         disponible (zona, monto_retenido, estado_recepcion), cantidad Y
+         monto, con evolución en el tiempo (agrupar columnas por mes)
+         de una vez, sin construir nada nuevo desde cero.
+    ══════════════════════════════════════════════════════════ -->
+    <record id="ve_wh_iva_view_pivot_zona" model="ir.ui.view">
+        <field name="name">ve.wh.iva.pivot.zona</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="arch" type="xml">
+            <pivot string="Retenciones por Zona">
+                <field name="zona" type="row"/>
+                <field name="estado_recepcion" type="col"/>
+                <field name="monto_retenido" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="ve_wh_iva_view_graph_zona" model="ir.ui.view">
+        <field name="name">ve.wh.iva.graph.zona</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="arch" type="xml">
+            <graph string="Retenciones por Zona" type="bar" stacked="1">
+                <field name="zona"/>
+                <field name="monto_retenido" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="ve_wh_iva_action_zona" model="ir.actions.act_window">
+        <field name="name">Retenciones por Zona</field>
+        <field name="res_model">ve.wh.iva</field>
+        <field name="view_mode">pivot,graph,list</field>
+        <field name="view_ids" eval="[(5,0,0),
+            (0,0,{'view_mode':'pivot','view_id':ref('ve_wh_iva_view_pivot_zona')}),
+            (0,0,{'view_mode':'graph','view_id':ref('ve_wh_iva_view_graph_zona')}),
+            (0,0,{'view_mode':'list','view_id':ref('ve_wh_iva_view_list')})]"/>
+        <field name="search_view_id" ref="ve_wh_iva_view_search"/>
+        <field name="domain">[('state', '!=', 'anulado')]</field>
+        <field name="context">{'search_default_gb_zona': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No hay retenciones registradas todavía.
+            </p>
+            <p>
+                Cantidad y monto retenido por Zona/Planta — usa los filtros
+                (Esperado/Vencido/Recibido/Confirmado) para ver dónde está el
+                crédito fiscal pendiente de recuperar, y agrupa por período
+                para ver la evolución en el tiempo.
+            </p>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════
+         Acciones
+    ══════════════════════════════════════════════════════════ -->
+    <record id="ve_wh_iva_action" model="ir.actions.act_window">
+        <field name="name">Retenciones IVA Clientes</field>
+        <field name="res_model">ve.wh.iva</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_state': 'esperado'}</field>
+    </record>
+
+    <record id="ve_wh_iva_action_concil" model="ir.actions.act_window">
+        <field name="name">Visual IVA Clientes</field>
+        <field name="res_model">ve.wh.iva</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_ids" eval="[(5,0,0),
+            (0,0,{'view_mode':'list','view_id':ref('ve_wh_iva_view_concil_list')}),
+            (0,0,{'view_mode':'form','view_id':ref('ve_wh_iva_view_form')})]"/>
+        <field name="search_view_id" ref="ve_wh_iva_view_search"/>
+        <field name="context">{'search_default_gb_conciliacion': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No hay retenciones IVA registradas.
+            </p>
+            <p>
+                Las retenciones se crean automáticamente al confirmar facturas
+                a clientes agentes de retención (SPE).
+            </p>
+        </field>
+    </record>
+
+    <!-- ══ Lista de recordatorios (drill-down desde Dashboard) ════════════════ -->
+    <record id="ve_wh_iva_view_list_recordatorios" model="ir.ui.view">
+        <field name="name">ve.wh.iva.list.recordatorios</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="arch" type="xml">
+            <list string="IVA Clientes — Recordatorios"
+                  default_order="fecha_vencimiento_entrega asc"
+                  decoration-muted="estado_recepcion in ('esperado', 'anulado')"
+                  decoration-warning="estado_recepcion in ('vencido', 'recibido_dif', 'confirmado_dif')"
+                  create="0" delete="0">
+                <field name="company_id"         string="Compa&#xF1;&#xED;a" optional="show"
+                       groups="base.group_multi_company"/>
+                <field name="partner_id"         string="Cliente"/>
+                <field name="partner_phone"      string="Tel&#xE9;fono" widget="phone" optional="show"/>
+                <field name="invoice_name"       string="N&#xB0; Factura"/>
+                <field name="payment_state"      string="Estado Pago" widget="badge"
+                       decoration-success="payment_state == 'paid'"
+                       decoration-info="payment_state == 'in_payment'"
+                       decoration-warning="payment_state == 'partial'"
+                       decoration-muted="payment_state == 'not_paid'"/>
+                <field name="periodo_retencion"  string="Per&#xED;odo"/>
+                <field name="name"               string="N&#xB0; Comprobante"/>
+                <field name="fecha_vencimiento_entrega" string="L&#xED;mite Entr."/>
+                <field name="fecha"              string="Fecha Recibido"/>
+                <field name="fuera_plazo"        string="Vencido" widget="boolean"/>
+                <field name="canal_recepcion"    string="Canal"/>
+                <field name="monto_retenido" string="Monto" sum="Total"/>
+                <field name="estado_recepcion" widget="badge" string="Recepci&#xf3;n"
+                       decoration-muted="estado_recepcion == 'esperado'"
+                       decoration-info="estado_recepcion in ('recibido', 'recibido_dif')"
+                       decoration-success="estado_recepcion in ('confirmado', 'confirmado_dif')"
+                       decoration-warning="estado_recepcion == 'vencido'"
+                       decoration-danger="estado_recepcion == 'anulado'"/>
+                <field name="estado_conciliacion" widget="badge" string="Conciliaci&#xf3;n SENIAT"
+                       decoration-muted="estado_conciliacion in ('pendiente', 'solo_odoo', 'solo_seniat')"
+                       decoration-warning="estado_conciliacion == 'diferencia'"
+                       decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                       decoration-success="estado_conciliacion in ('listo_declarar', 'conciliada', 'declarado', 'aprobado_declarar')"/>
+                <field name="estado_declaracion" widget="badge" string="Declaraci&#xf3;n"
+                       decoration-muted="estado_declaracion == 'no_declarado'"
+                       decoration-success="estado_declaracion == 'declarado'"/>
+                <field name="fecha_ultimo_recordatorio" string="&#xDA;ltimo Recordatorio"/>
+                <button name="action_recordatorio_envio_comp"
+                        type="object" icon="fa-envelope"
+                        class="btn-sm btn-secondary"
+                        title="Pedir envío del comprobante"
+                        invisible="not necesita_envio_comp"/>
+                <button name="action_recordatorio_dif_seniat"
+                        type="object" icon="fa-exclamation-triangle"
+                        class="btn-sm btn-warning"
+                        title="Aclarar diferencia de monto con SENIAT"
+                        invisible="not necesita_aclarar_dif_seniat"/>
+                <button name="action_recordatorio_rep_seniat"
+                        type="object" icon="fa-flag"
+                        class="btn-sm btn-danger"
+                        title="El agente debe reportar la retención a SENIAT"
+                        invisible="not necesita_reportar_seniat"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Vista lista dedicada para "Ver todos" desde la Lista de Trabajo del
+         Dashboard (ve_dashboard_iva.py::action_ver_lista_trabajo_completa) —
+         mismos campos/botones que el widget embebido del Dashboard (Cliente,
+         Factura, Monto, fechas, badges de los 3 ejes, botón Abrir/Llamada/
+         Recordatorios), para que la usuaria vea exactamente lo mismo al
+         entrar por "Ver todos" que en la tarjeta original. Pedido explícito
+         2026-07-30. -->
+    <record id="ve_wh_iva_view_list_seguimiento" model="ir.ui.view">
+        <field name="name">ve.wh.iva.list.seguimiento</field>
+        <field name="model">ve.wh.iva</field>
+        <field name="arch" type="xml">
+            <list string="Seguimiento — No Recibidas" create="false" delete="false"
+                  edit="false"
+                  decoration-danger="estado_recepcion == 'vencido'"
+                  decoration-info="estado_recepcion == 'esperado'">
+                <field name="partner_id" string="Cliente"/>
+                <field name="zona" string="Zona/Planta" optional="show"/>
+                <field name="invoice_name" string="Factura"/>
+                <field name="nro_control" string="N&#xB0; Control" optional="hide"/>
+                <field name="payment_state" string="Estado Pago" widget="badge"
+                       decoration-success="payment_state == 'paid'"
+                       decoration-info="payment_state == 'in_payment'"
+                       decoration-warning="payment_state == 'partial'"
+                       decoration-muted="payment_state == 'not_paid'"/>
+                <field name="monto_retenido" string="Monto" sum="Total"/>
+                <field name="periodo_retencion" string="Per&#xED;odo"/>
+                <field name="fecha_vencimiento_entrega" string="Fecha L&#xED;mite"/>
+                <field name="fecha_ultimo_recordatorio" string="&#xDA;ltimo Recordatorio"/>
+                <field name="fecha_ultima_llamada" string="&#xDA;ltima Llamada"/>
+                <field name="estado_recepcion" string="Recepci&#xf3;n" widget="badge"
+                       decoration-muted="estado_recepcion == 'esperado'"
+                       decoration-info="estado_recepcion in ('recibido', 'recibido_dif')"
+                       decoration-success="estado_recepcion in ('confirmado', 'confirmado_dif')"
+                       decoration-warning="estado_recepcion == 'vencido'"
+                       decoration-danger="estado_recepcion == 'anulado'"/>
+                <field name="estado_conciliacion" string="Conciliaci&#xf3;n SENIAT" widget="badge"
+                       decoration-muted="estado_conciliacion in ('pendiente', 'solo_odoo', 'solo_seniat')"
+                       decoration-warning="estado_conciliacion == 'diferencia'"
+                       decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                       decoration-success="estado_conciliacion in ('listo_declarar', 'conciliada', 'declarado', 'aprobado_declarar')"/>
+                <field name="estado_declaracion" string="Declaraci&#xf3;n" widget="badge"
+                       decoration-muted="estado_declaracion == 'no_declarado'"
+                       decoration-success="estado_declaracion == 'declarado'"/>
+                <button name="action_abrir_form"
+                        string="Abrir" type="object" icon="fa-external-link"
+                        class="btn-sm btn-link" title="Abrir comprobante"/>
+                <button name="action_abrir_registrar_llamada"
+                        type="object" icon="fa-phone"
+                        class="btn-sm btn-outline-primary"
+                        title="Registrar llamada al contacto"/>
+                <button name="action_recordatorio_envio_comp"
+                        type="object" icon="fa-envelope"
+                        class="btn-sm btn-secondary"
+                        title="Pedir env&#xED;o del comprobante"
+                        invisible="not necesita_envio_comp"/>
+                <button name="action_recordatorio_dif_seniat"
+                        type="object" icon="fa-exclamation-triangle"
+                        class="btn-sm btn-warning"
+                        title="Aclarar diferencia de monto con SENIAT"
+                        invisible="not necesita_aclarar_dif_seniat"/>
+                <button name="action_recordatorio_rep_seniat"
+                        type="object" icon="fa-flag"
+                        class="btn-sm btn-danger"
+                        title="El agente debe reportar la retenci&#xF3;n a SENIAT"
+                        invisible="not necesita_reportar_seniat"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Server actions para envío masivo desde selección múltiple —
+         separadas 2026-07-30 (pedido explícito): antes una sola acción
+         elegía el tipo por registro, ahora se puede elegir a propósito
+         "normal" (solicitar comprobante) o "SENIAT" (aclarar diferencia/
+         reportar) al mandar en bloque. -->
+    <record id="action_server_recordatorios_normal_seleccion" model="ir.actions.server">
+        <field name="name">Enviar Recordatorio — Comprobante (Normal)</field>
+        <field name="model_id" ref="model_ve_wh_iva"/>
+        <field name="binding_model_id" ref="model_ve_wh_iva"/>
+        <field name="binding_type">action</field>
+        <field name="state">code</field>
+        <field name="code">action = records.action_enviar_recordatorios_normal_seleccion()</field>
+    </record>
+
+    <record id="action_server_recordatorios_seniat_seleccion" model="ir.actions.server">
+        <field name="name">Enviar Recordatorio — SENIAT</field>
+        <field name="model_id" ref="model_ve_wh_iva"/>
+        <field name="binding_model_id" ref="model_ve_wh_iva"/>
+        <field name="binding_type">action</field>
+        <field name="state">code</field>
+        <field name="code">action = records.action_enviar_recordatorios_seniat_seleccion()</field>
+    </record>
+
+    <!-- Selección múltiple desde "Facturas con Diferencia", pedido
+         explícito 2026-08-06. binding_model_id es a nivel de MODELO, no de
+         vista: esta acción (y las de Enviar Recordatorio de arriba)
+         aparecen en el menú Acciones de CUALQUIER lista de ve.wh.iva,
+         Odoo no ofrece forma nativa de scopear un binding a una sola vista
+         en particular. -->
+    <record id="action_server_aceptar_monto_archivo_seleccion" model="ir.actions.server">
+        <field name="name">Aceptar Monto del Archivo</field>
+        <field name="model_id" ref="model_ve_wh_iva"/>
+        <field name="binding_model_id" ref="model_ve_wh_iva"/>
+        <field name="binding_type">action</field>
+        <field name="state">code</field>
+        <field name="code">action = records.action_aceptar_monto_archivo_multi()</field>
+    </record>
+
+</odoo>

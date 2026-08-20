@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ve_wizard_declarar_view_form" model="ir.ui.view">
+        <field name="name">ve.wizard.declarar.form</field>
+        <field name="model">ve.wizard.declarar</field>
+        <field name="arch" type="xml">
+            <form string="Confirmar Declaraci&#xF3;n Forma 030">
+                <sheet>
+                    <div class="alert alert-info" role="alert">
+                        <i class="fa fa-info-circle" title="Información"/>&#160;
+                        Ingrese el <strong>N° Certificado SENIAT</strong> (21 d&#xED;gitos)
+                        asignado por el SENIAT y adjunte la planilla PDF antes de confirmar.
+                    </div>
+                    <group>
+                        <field name="declaracion_iva_id" readonly="1"/>
+                        <field name="nro_declaracion" required="1" placeholder="21 d&#xED;gitos"/>
+                        <field name="planilla_declaracion"
+                               widget="binary"
+                               string="Planilla SENIAT (PDF)"
+                               filename="planilla_declaracion_nombre"/>
+                        <field name="planilla_declaracion_nombre" invisible="1"/>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="action_confirmar"
+                            string="Confirmar Certificado"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Cancelar" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

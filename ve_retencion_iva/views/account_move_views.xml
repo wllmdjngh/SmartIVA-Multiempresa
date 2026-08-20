@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ── Formulario de facturas ── -->
+    <record id="account_move_view_form_ve_retencion" model="ir.ui.view">
+        <field name="name">account.move.form.ve.retencion</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="priority">50</field>
+        <field name="arch" type="xml">
+
+            <!--
+                En Odoo 19, el form de facturas usa <label for="invoice_date">
+                separado del <field name="invoice_date">.
+                Insertar el campo ANTES del label asegura que nro_control
+                tenga su propio par label+value, y que invoice_date conserve
+                el suyo con la etiqueta "Fecha de factura".
+            -->
+            <xpath expr="//label[@for='invoice_date']" position="before">
+                <field name="nro_control"
+                       string="N&#xB0; Control"
+                       placeholder="00-0000000"
+                       invisible="move_type not in ('out_invoice','out_refund')"/>
+            </xpath>
+
+            <!-- Pesta&#xF1;as de retenciones IVA -->
+            <notebook position="inside">
+                <page string="Retenciones IVA" name="ve_wh_iva"
+                      invisible="move_type not in ('out_invoice','out_refund')">
+                    <field name="ve_wh_iva_ids">
+                        <list create="0" delete="0">
+                            <field name="name"   string="N&#xB0; Comprobante"/>
+                            <field name="estado_recepcion" string="Estado" widget="badge"
+                                   decoration-muted="estado_recepcion == 'esperado'"
+                                   decoration-info="estado_recepcion in ('recibido', 'recibido_dif')"
+                                   decoration-success="estado_recepcion in ('confirmado', 'confirmado_dif')"
+                                   decoration-warning="estado_recepcion == 'vencido'"
+                                   decoration-danger="estado_recepcion == 'anulado'"/>
+                            <field name="fecha"  string="Fecha Recibido"/>
+                            <field name="monto_retenido"/>
+                            <field name="porcentaje_retencion" string="% Ret."/>
+                            <field name="canal_recepcion"/>
+                            <button name="action_abrir_form" string="Abrir" type="object"
+                                    icon="fa-external-link"
+                                    class="btn-sm btn-link" title="Abrir comprobante"/>
+                        </list>
+                    </field>
+                </page>
+                <page string="Retenciones IVA Proveedores" name="ve_wh_iva_prov"
+                      invisible="move_type not in ('in_invoice','in_refund')">
+                    <field name="ve_wh_iva_prov_ids">
+                        <list create="0" delete="0">
+                            <field name="ref"          string="Ref."              style="max-width:120px;"/>
+                            <field name="name"         string="N&#xB0; Comprobante"/>
+                            <field name="state"        widget="badge"
+                                   decoration-info="state == 'enviado'"
+                                   decoration-success="state == 'declarado'"
+                                   decoration-muted="state == 'anulado'"/>
+                            <field name="fecha"        string="Fecha"/>
+                            <field name="monto_retenido" string="Monto Retenido" sum="Total"/>
+                            <field name="porcentaje_retencion" string="% Ret."/>
+                            <button name="action_abrir_form" type="object"
+                                    string="Abrir" icon="fa-external-link"
+                                    class="btn-sm btn-link"/>
+                        </list>
+                    </field>
+                </page>
+            </notebook>
+
+        </field>
+    </record>
+
+    <!-- ── N° Control en la vista lista de Facturas (Ventas y Compras) ── -->
+    <record id="view_out_invoice_tree_ve_retencion" model="ir.ui.view">
+        <field name="name">account.move.out.invoice.list.ve.retencion</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_out_invoice_tree"/>
+        <field name="arch" type="xml">
+            <field name="name" position="after">
+                <field name="nro_control" string="N&#xB0; Control" optional="show"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="view_in_invoice_tree_ve_retencion" model="ir.ui.view">
+        <field name="name">account.move.in.invoice.list.ve.retencion</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_in_invoice_tree"/>
+        <field name="arch" type="xml">
+            <field name="name" position="after">
+                <field name="nro_control" string="N&#xB0; Control" optional="show"/>
+            </field>
+        </field>
+    </record>
+
+</odoo>

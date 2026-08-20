@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="DJCS_view_conciliar_confirm_form" model="ir.ui.view">
+        <field name="name">ve.conciliar.confirm.wizard.form</field>
+        <field name="model">ve.conciliar.confirm.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Confirmar Conciliación SENIAT">
+                <sheet>
+                    <div class="alert alert-warning" role="alert">
+                        <i class="fa fa-exclamation-triangle" title="Advertencia"/>&#160;
+                        <strong>Hay <field name="n_borrador" readonly="1" nolabel="1"/> retenci&#xF3;n(es) en estado <em>Recibido</em> (sin confirmar).</strong><br/>
+                        Participar&#xE1;n en el match SENIAT y podr&#xE1;n incluirse en C.66 usando el monto recibido,
+                        pero <strong>no se podr&#xE1; Aprobar</strong> el per&#xED;odo hasta que todas sean confirmadas.<br/>
+                        &#xBF;Desea continuar con la conciliaci&#xF3;n?
+                    </div>
+                    <field name="conciliacion_id" invisible="1"/>
+                </sheet>
+                <footer>
+                    <button name="action_proceder"
+                            string="Continuar"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Cancelar" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

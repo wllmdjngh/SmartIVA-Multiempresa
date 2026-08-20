@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- noupdate=1: solo se crea la primera vez, no se sobreescribe en upgrades -->
+<odoo noupdate="1">
+
+    <record id="mail_alias_comprobantes_iva" model="mail.alias">
+        <field name="alias_name">comprobantes-iva</field>
+        <field name="alias_model_id" ref="model_ve_comprobante_inbox"/>
+    </record>
+
+</odoo>

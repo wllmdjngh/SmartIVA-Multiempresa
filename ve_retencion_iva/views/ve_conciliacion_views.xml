@@ -1,0 +1,509 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="ve_conciliacion_view_list" model="ir.ui.view">
+        <field name="name">ve.conciliacion.periodo.list</field>
+        <field name="model">ve.conciliacion.periodo</field>
+        <field name="arch" type="xml">
+            <list string="Conciliación SENIAT">
+                <field name="company_id"                 string="Compa&#xF1;&#xED;a" optional="show"
+                       groups="base.group_multi_company"/>
+                <field name="periodo_retencion"          string="Per&#xED;odo"/>
+                <field name="periodo"                    string="Fiscal"/>
+                <field name="fecha_inicio"               string="Inicio"/>
+                <field name="fecha_fin"                  string="Fin"/>
+                <field name="total_odoo"                 string="Esperados" sum="Total"/>
+                <field name="total_recibidos"            string="Recibidos" sum="Total"/>
+                <field name="total_seniat"               string="SENIAT" sum="Total"/>
+                <field name="monto_conciliado_seniat"    string="Conciliado del Período" sum="Total"/>
+                <field name="monto_conciliado_fuera_periodo" string="Conciliado Fuera de Período" sum="Total"/>
+                <field name="monto_conciliado_diferencia" string="Conciliado C/Dif" sum="Total"
+                       decoration-danger="monto_conciliado_diferencia != 0"/>
+                <field name="monto_sin_match_seniat"     string="No Conciliadas" sum="Total"/>
+                <field name="estado" widget="badge"
+                       decoration-muted="estado == 'borrador'"
+                       decoration-warning="estado == 'en_proceso'"
+                       decoration-info="estado == 'revision'"
+                       decoration-success="estado == 'aprobado' or estado == 'declarado'"/>
+                <field name="fecha_declaracion"          string="Fecha Declaraci&#xf3;n"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="ve_conciliacion_view_search" model="ir.ui.view">
+        <field name="name">ve.conciliacion.periodo.search</field>
+        <field name="model">ve.conciliacion.periodo</field>
+        <field name="arch" type="xml">
+            <search string="Buscar Conciliaci&#xF3;n SENIAT">
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="periodo_retencion" string="Per&#xED;odo"/>
+                <filter name="estado_borrador" string="Borrador" domain="[('estado','=','borrador')]"/>
+                <filter name="estado_en_proceso" string="En Proceso" domain="[('estado','=','en_proceso')]"/>
+                <filter name="estado_revision" string="Revisi&#xF3;n" domain="[('estado','=','revision')]"/>
+                <filter name="estado_aprobado" string="Aprobado" domain="[('estado','=','aprobado')]"/>
+                <filter name="estado_declarado" string="Declarado" domain="[('estado','=','declarado')]"/>
+                <separator/>
+                <group>
+                    <filter name="gb_company" string="Compa&#xF1;&#xED;a"
+                            context="{'group_by': 'company_id'}"
+                            groups="base.group_multi_company"/>
+                    <filter name="gb_periodo" string="Per&#xED;odo"
+                            context="{'group_by': 'periodo_retencion'}"/>
+                    <filter name="gb_estado" string="Estado"
+                            context="{'group_by': 'estado'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="ve_conciliacion_view_form" model="ir.ui.view">
+        <field name="name">ve.conciliacion.periodo.form</field>
+        <field name="model">ve.conciliacion.periodo</field>
+        <field name="arch" type="xml">
+            <form string="Declaración IVA Clientes">
+                <header>
+                    <button name="action_extraer_seniat"
+                            string="Extraer SENIAT"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-android"
+                            invisible="estado in ('aprobado', 'declarado')"/>
+                    <button name="action_cargar_seniat_csv"
+                            string="Cargar XLSX SENIAT"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-upload"
+                            invisible="estado not in ('borrador', 'en_proceso', 'revision')"/>
+                    <button name="action_reporte_conciliacion"
+                            string="Reporte Concilia SENIAT"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="estado not in ('revision', 'aprobado', 'declarado')"/>
+                    <button name="action_reabrir"
+                            string="Reabrir"
+                            type="object"
+                            class="btn-warning"
+                            invisible="estado != 'aprobado'"/>
+                    <button name="action_enviar_recordatorios_pendientes"
+                            string="Recordatorios Pendientes"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-envelope"
+                            invisible="estado not in ('en_proceso', 'revision')"/>
+                    <button name="action_confirmar_todos"
+                            string="Confirmar Todos"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-check-square"
+                            invisible="estado not in ('borrador', 'en_proceso', 'revision')"/>
+                    <button name="action_conciliar"
+                            string="Conciliar SENIAT"
+                            type="object"
+                            class="btn-primary"
+                            invisible="estado not in ('borrador', 'revision')"/>
+                    <button name="action_aprobar"
+                            string="Aprobar"
+                            type="object"
+                            class="btn-success"
+                            invisible="estado != 'revision'"/>
+                    <button name="action_ver_normalizadas"
+                            string="Ver Normalizadas"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="count_normalizados == 0"/>
+                    <field name="estado" widget="statusbar"
+                           statusbar_visible="borrador,en_proceso,revision,aprobado,declarado"/>
+                </header>
+                <sheet>
+                    <div class="alert alert-warning" role="alert" invisible="count_normalizados == 0">
+                        <i class="fa fa-info-circle" title="Normalizaci&#xf3;n"/>&#160;
+                        <field name="count_normalizados" nolabel="1" readonly="1" class="d-inline"/>
+                        retenci&#xf3;n(es) conciliada(s) con el SENIAT solo despu&#xe9;s de normalizar
+                        el N&#xb0; de Control/Factura (el cliente report&#xf3; el formato con ceros de
+                        relleno, guiones o prefijo distinto al del Libro de Ventas, pero es la misma
+                        retenci&#xf3;n) &#8212; monto afectado:
+                        <field name="monto_normalizado" nolabel="1" readonly="1" class="d-inline"/> Bs.
+                        Use el bot&#xf3;n <b>Ver Normalizadas</b> para auditarlas antes de declarar.
+                    </div>
+                    <group>
+                        <group string="Información del Período">
+                            <field name="periodo_retencion"/>
+                            <field name="periodo"/>
+                            <field name="fecha_inicio"/>
+                            <field name="fecha_fin"/>
+                        </group>
+                        <group string="Resumen">
+                            <field name="total_odoo"             string="Total Comp. Esperados (Período)"/>
+                            <field name="total_recibidos"        string="Total Recibidos"/>
+                            <field name="total_seniat"           string="Total SENIAT"/>
+                            <field name="monto_conciliado"       string="Monto Conciliado"/>
+                            <field name="diferencia"             string="Dif. Recibido-SENIAT"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Retenciones NO Recibidas" name="no_recibidas"
+                              invisible="estado == 'declarado'">
+                            <field name="wh_iva_no_recibidas_ids">
+                                <list delete="0" string="No Recibidas">
+                                    <field name="ref"          string="Ref."/>
+                                    <field name="partner_id"   string="Cliente"/>
+                                    <field name="rif"/>
+                                    <field name="invoice_name" string="Factura"/>
+                                    <field name="nro_control"  string="N&#xB0; Control"/>
+                                    <field name="periodo"      string="Per&#xED;odo"/>
+                                    <field name="fecha_vencimiento_entrega" string="L&#xED;mite Entrega"/>
+                                    <field name="fuera_plazo"  string="Vencido" widget="boolean"/>
+                                    <field name="monto_retenido" string="Monto" sum="Total"/>
+                                    <field name="estado_recepcion" widget="badge"
+                                           string="Recepci&#xf3;n"
+                                           decoration-muted="estado_recepcion == 'esperado'"
+                                           decoration-warning="estado_recepcion == 'vencido'"
+                                           readonly="1"/>
+                                    <field name="estado_conciliacion" widget="badge"
+                                           string="Conciliaci&#xf3;n SENIAT"
+                                           decoration-muted="estado_conciliacion in ('pendiente', 'solo_odoo', 'solo_seniat')"
+                                           decoration-warning="estado_conciliacion == 'diferencia'"
+                                           decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                                           decoration-success="estado_conciliacion in ('listo_declarar', 'conciliada', 'declarado', 'aprobado_declarar')"
+                                           readonly="1"/>
+                                    <button name="action_abrir_form"
+                                            string="Abrir" type="object" icon="fa-external-link"
+                                            class="btn-sm btn-link" title="Abrir comprobante"/>
+                                    <button name="action_recordatorio_envio_comp"
+                                            type="object" icon="fa-envelope"
+                                            class="btn-sm btn-secondary"
+                                            title="Pedir env&#xED;o del comprobante"
+                                            invisible="not necesita_envio_comp"/>
+                                    <button name="action_recordatorio_dif_seniat"
+                                            type="object" icon="fa-exclamation-triangle"
+                                            class="btn-sm btn-warning"
+                                            title="Aclarar diferencia de monto con SENIAT"
+                                            invisible="not necesita_aclarar_dif_seniat"/>
+                                    <button name="action_recordatorio_rep_seniat"
+                                            type="object" icon="fa-flag"
+                                            class="btn-sm btn-danger"
+                                            title="El agente debe reportar la retenci&#xF3;n a SENIAT"
+                                            invisible="not necesita_reportar_seniat"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Retenciones Recibidas" name="recibidas"
+                              invisible="estado == 'declarado'">
+                            <field name="wh_iva_recibidas_ids">
+                                <list delete="0" string="Recibidas">
+                                    <field name="ref"          string="Ref."/>
+                                    <field name="name"         string="N&#xB0; Comprobante"/>
+                                    <field name="partner_id"   string="Cliente"/>
+                                    <field name="rif"/>
+                                    <field name="invoice_name" string="Factura"/>
+                                    <field name="nro_control"  string="N&#xB0; Control"/>
+                                    <field name="fecha"        string="Fecha Rec."/>
+                                    <field name="monto_retenido" string="Esperado"  sum="Total Esperado"/>
+                                    <field name="monto_recibido" string="Recibido"  sum="Total Recibido"/>
+                                    <field name="estado_recepcion" widget="badge"
+                                           string="Recepci&#xf3;n"
+                                           decoration-muted="estado_recepcion == 'esperado'"
+                                           decoration-info="estado_recepcion in ('recibido', 'recibido_dif')"
+                                           decoration-success="estado_recepcion in ('confirmado', 'confirmado_dif')"
+                                           decoration-warning="estado_recepcion == 'vencido'"
+                                           readonly="1"/>
+                                    <field name="estado_conciliacion" widget="badge"
+                                           string="Conciliaci&#xf3;n SENIAT"
+                                           decoration-muted="estado_conciliacion in ('pendiente', 'solo_odoo', 'solo_seniat')"
+                                           decoration-warning="estado_conciliacion == 'diferencia'"
+                                           decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                                           decoration-success="estado_conciliacion in ('listo_declarar', 'conciliada', 'declarado', 'aprobado_declarar')"
+                                           readonly="1"/>
+                                    <button name="action_abrir_form"
+                                            string="Abrir" type="object" icon="fa-external-link"
+                                            class="btn-sm btn-link" title="Abrir comprobante"/>
+                                    <button name="action_recordatorio_dif_seniat"
+                                            type="object" icon="fa-exclamation-triangle"
+                                            class="btn-sm btn-warning"
+                                            title="Aclarar diferencia de monto con SENIAT"
+                                            invisible="not necesita_aclarar_dif_seniat"/>
+                                    <button name="action_recordatorio_rep_seniat"
+                                            type="object" icon="fa-flag"
+                                            class="btn-sm btn-danger"
+                                            title="El agente debe reportar la retenci&#xF3;n a SENIAT"
+                                            invisible="not necesita_reportar_seniat"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Retenciones SENIAT" name="seniat">
+                            <group>
+                                <field name="estado_extraccion" widget="badge"
+                                       decoration-muted="estado_extraccion == 'pendiente'"
+                                       decoration-warning="estado_extraccion == 'iniciada' and not extraccion_estancada"
+                                       decoration-success="estado_extraccion == 'completada'"
+                                       decoration-danger="estado_extraccion == 'fallo' or extraccion_estancada"/>
+                                <field name="fecha_estado_extraccion"/>
+                                <field name="notas_extraccion"/>
+                                <field name="mensaje_estado_extraccion" invisible="1"/>
+                                <field name="extraccion_estancada" invisible="1"/>
+                            </group>
+                            <field name="seniat_ids" readonly="estado == 'declarado'">
+                                <list>
+                                    <field name="rif_agente" string="RIF Agente"/>
+                                    <field name="nro_control"/>
+                                    <field name="nro_documento" string="N&#xB0; Factura"/>
+                                    <field name="nombre_agente"/>
+                                    <field name="fecha" string="Fecha Operaci&#xF3;n"/>
+                                    <field name="periodo_retencion"/>
+                                    <field name="monto_retenido" sum="Total SENIAT"/>
+                                    <field name="fecha_carga"/>
+                                    <field name="nivel_match" string="Nivel Match"
+                                           decoration-muted="not nivel_match"/>
+                                    <field name="estado" widget="badge"
+                                           string="Estado Conciliaci&#xF3;n"
+                                           decoration-muted="estado == 'cargado'"
+                                           decoration-success="estado == 'conciliado'"
+                                           decoration-warning="estado == 'diferencia'"
+                                           decoration-danger="estado == 'sin_match'"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <!-- ══ Retenciones IVA Clientes (solo lectura tras Declarar) ══════ -->
+                        <page string="Retenciones IVA Clientes" name="declarados"
+                              invisible="estado != 'declarado'">
+                            <field name="wh_iva_declaradas_ids" readonly="1">
+                                <list string="Retenciones IVA Clientes">
+                                    <field name="ref"            string="Ref."/>
+                                    <field name="name"           string="N&#xB0; Comprobante"/>
+                                    <field name="partner_id"     string="Cliente"/>
+                                    <field name="rif"            optional="show"/>
+                                    <field name="invoice_name"   string="Factura"/>
+                                    <field name="nro_control"    string="N&#xB0; Control"/>
+                                    <field name="fecha"          string="Fecha Rec."/>
+                                    <field name="monto_retenido" string="Esperado"  sum="Total Esperado"/>
+                                    <field name="monto_c66"      string="C.66"       sum="Total C.66"/>
+                                    <field name="estado_recepcion" widget="badge"
+                                           string="Recepci&#xf3;n"
+                                           decoration-warning="estado_recepcion in ('esperado', 'vencido', 'recibido_dif', 'confirmado_dif')"
+                                           decoration-success="estado_recepcion in ('recibido', 'confirmado')"/>
+                                    <field name="estado_conciliacion" widget="badge"
+                                           string="Conciliaci&#xf3;n SENIAT"
+                                           decoration-info="estado_conciliacion in ('pendiente', 'solo_odoo', 'solo_seniat')"
+                                           decoration-primary="estado_conciliacion == 'conciliada_norec'"
+                                           decoration-success="estado_conciliacion in ('listo_declarar', 'conciliada', 'declarado', 'aprobado_declarar')"/>
+                                    <button name="action_abrir_form"
+                                            string="Abrir" type="object" icon="fa-external-link"
+                                            class="btn-sm btn-link" title="Abrir comprobante"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Acción servidor para reiniciar demo (sin binding — acceso desde menú) -->
+    <record id="action_server_reiniciar_demo" model="ir.actions.server">
+        <field name="name">Reiniciar Demo</field>
+        <field name="model_id" ref="model_ve_conciliacion_periodo"/>
+        <field name="state">code</field>
+        <field name="code">
+if not env.user.has_group('base.group_system'):
+    raise UserError('Solo administradores pueden ejecutar esta acción.')
+action = records.action_reiniciar_demo()
+        </field>
+    </record>
+
+    <record id="ve_conciliacion_action" model="ir.actions.act_window">
+        <field name="name">Conciliación SENIAT</field>
+        <field name="res_model">ve.conciliacion.periodo</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="ve_conciliacion_view_search"/>
+    </record>
+
+    <!-- DJCS_declaracion_iva_list/_form/_action eliminados — viven en ve_declaracion_iva_views.xml (ve.declaracion.iva) -->
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         Retenciones SENIAT por Período — vista dedicada y simplificada,
+         mismo modelo ve.conciliacion.periodo (mismo registro que
+         "Conciliación SENIAT"), pero enfocada solo en el ciclo de
+         extracción SENIAT (crear período, llamar RPA / subir XLSX, ver
+         estado de extracción) — sin los totales/recibidos/workflow de
+         declaración de la vista completa. Un botón en la ficha lleva a
+         la ficha completa de Conciliación SENIAT del mismo registro.
+         ══════════════════════════════════════════════════════════════════ -->
+
+    <record id="ve_conciliacion_seniat_view_list" model="ir.ui.view">
+        <field name="name">ve.conciliacion.periodo.seniat.list</field>
+        <field name="model">ve.conciliacion.periodo</field>
+        <field name="arch" type="xml">
+            <list string="Retenciones SENIAT por Período">
+                <field name="company_id"              string="Compa&#xF1;&#xED;a" optional="show"
+                       groups="base.group_multi_company"/>
+                <field name="periodo_retencion"       string="Per&#xED;odo"/>
+                <field name="periodo"                 string="Fiscal"/>
+                <field name="estado"                  string="Edo Declaraci&#xf3;n" widget="badge"
+                       decoration-muted="estado != 'declarado'"
+                       decoration-success="estado == 'declarado'"/>
+                <field name="estado_extraccion"       string="Extracci&#xf3;n SENIAT" widget="badge"
+                       decoration-muted="estado_extraccion == 'pendiente'"
+                       decoration-warning="estado_extraccion == 'iniciada' and not extraccion_estancada"
+                       decoration-success="estado_extraccion == 'completada'"
+                       decoration-danger="estado_extraccion == 'fallo' or extraccion_estancada"/>
+                <field name="fecha_estado_extraccion" string="&#xda;lt. Estado"/>
+                <field name="n_seniat"                string="N.Retenciones" sum="Total"/>
+                <field name="total_seniat"            string="Retenciones SENIAT" sum="Total"/>
+                <field name="rifs_seniat_no_spe" invisible="1"/>
+                <field name="notas_extraccion"        string="Notas"
+                       decoration-danger="rifs_seniat_no_spe"/>
+                <!-- column_invisible (no invisible): en list views "invisible"
+                     solo oculta el CONTENIDO de la celda, no la columna. Con
+                     invisible=1 la columna igual aparecía vacía (bug real
+                     reportado por la usuaria 2026-08-05). El campo solo hace
+                     falta para que decoration-danger de arriba pueda leerlo. -->
+                <field name="extraccion_estancada"    column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="ve_conciliacion_seniat_view_search" model="ir.ui.view">
+        <field name="name">ve.conciliacion.periodo.seniat.search</field>
+        <field name="model">ve.conciliacion.periodo</field>
+        <field name="arch" type="xml">
+            <search string="Buscar Retenciones SENIAT por Per&#xED;odo">
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="periodo_retencion" string="Per&#xED;odo"/>
+                <field name="periodo" string="Per&#xED;odo Fiscal"/>
+                <filter name="extr_pendiente" string="Extracci&#xf3;n Pendiente"
+                        domain="[('estado_extraccion','=','pendiente')]"/>
+                <filter name="extr_iniciada" string="Extracci&#xf3;n Iniciada"
+                        domain="[('estado_extraccion','=','iniciada')]"/>
+                <filter name="extr_completada" string="Extracci&#xf3;n Completada"
+                        domain="[('estado_extraccion','=','completada')]"/>
+                <filter name="extr_fallo" string="Extracci&#xf3;n Fall&#xf3;"
+                        domain="[('estado_extraccion','=','fallo')]"/>
+                <separator/>
+                <filter name="periodo_declarado" string="Declarado" domain="[('estado','=','declarado')]"/>
+                <filter name="periodo_pendiente" string="Pendiente" domain="[('estado','!=','declarado')]"/>
+                <separator/>
+                <group>
+                    <filter name="gb_company" string="Compa&#xF1;&#xED;a"
+                            context="{'group_by': 'company_id'}"
+                            groups="base.group_multi_company"/>
+                    <filter name="gb_extraccion" string="Estado Extracci&#xf3;n"
+                            context="{'group_by': 'estado_extraccion'}"/>
+                    <filter name="gb_periodo_fiscal" string="Per&#xED;odo Fiscal"
+                            context="{'group_by': 'periodo'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="ve_conciliacion_seniat_view_form" model="ir.ui.view">
+        <field name="name">ve.conciliacion.periodo.seniat.form</field>
+        <field name="model">ve.conciliacion.periodo</field>
+        <field name="arch" type="xml">
+            <form string="Retenciones SENIAT por Período">
+                <header>
+                    <button name="action_extraer_seniat"
+                            string="Extraer SENIAT"
+                            type="object"
+                            class="btn-primary"
+                            icon="fa-android"
+                            invisible="not id or estado == 'declarado'"/>
+                    <button name="action_cargar_seniat_csv"
+                            string="Cargar XLSX SENIAT"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-upload"
+                            invisible="not id or estado == 'declarado'"/>
+                    <button name="action_ver_ret_no_spe"
+                            string="Ver Ret. no SPE"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="not partners_seniat_no_spe_ids"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Período">
+                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="periodo_retencion"/>
+                            <field name="periodo"/>
+                            <field name="fecha_inicio"/>
+                            <field name="fecha_fin"/>
+                            <field name="estado" string="Edo Declaración" widget="badge"
+                                   decoration-muted="estado != 'declarado'"
+                                   decoration-success="estado == 'declarado'"/>
+                        </group>
+                        <group string="Extracción SENIAT">
+                            <field name="estado_extraccion" widget="badge"
+                                   decoration-muted="estado_extraccion == 'pendiente'"
+                                   decoration-warning="estado_extraccion == 'iniciada' and not extraccion_estancada"
+                                   decoration-success="estado_extraccion == 'completada'"
+                                   decoration-danger="estado_extraccion == 'fallo' or extraccion_estancada"/>
+                            <field name="fecha_estado_extraccion"/>
+                            <field name="notas_extraccion"/>
+                            <field name="mensaje_estado_extraccion" invisible="1"/>
+                            <field name="extraccion_estancada" invisible="1"/>
+                            <field name="partners_seniat_no_spe_ids" invisible="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Retenciones SENIAT" name="seniat">
+                            <field name="seniat_ids" readonly="estado == 'declarado'">
+                                <list>
+                                    <field name="rif_agente" string="RIF Agente"/>
+                                    <field name="nro_control"/>
+                                    <field name="nro_documento" string="N&#xB0; Factura"/>
+                                    <field name="nombre_agente"/>
+                                    <field name="fecha" string="Fecha Operaci&#xF3;n"/>
+                                    <field name="periodo_retencion"/>
+                                    <field name="monto_retenido" sum="Total SENIAT"/>
+                                    <field name="fecha_carga"/>
+                                    <field name="nivel_match" string="Nivel Match"
+                                           decoration-muted="not nivel_match"/>
+                                    <field name="estado" widget="badge"
+                                           string="Estado Conciliaci&#xF3;n"
+                                           decoration-muted="estado == 'cargado'"
+                                           decoration-success="estado == 'conciliado'"
+                                           decoration-warning="estado == 'diferencia'"
+                                           decoration-danger="estado == 'sin_match'"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_server_extraer_seniat_seleccion" model="ir.actions.server">
+        <field name="name">Extraer SENIAT (per&#xed;odos seleccionados)</field>
+        <field name="model_id" ref="model_ve_conciliacion_periodo"/>
+        <field name="binding_model_id" ref="model_ve_conciliacion_periodo"/>
+        <field name="binding_type">action</field>
+        <field name="state">code</field>
+        <field name="code">action = records.action_extraer_seniat_multi()</field>
+    </record>
+
+    <record id="ve_conciliacion_seniat_action" model="ir.actions.act_window">
+        <field name="name">Retenciones SENIAT por Período</field>
+        <field name="res_model">ve.conciliacion.periodo</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="ve_conciliacion_seniat_view_search"/>
+    </record>
+    <record id="ve_conciliacion_seniat_action_view_list" model="ir.actions.act_window.view">
+        <field name="sequence">1</field>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="ve_conciliacion_seniat_view_list"/>
+        <field name="act_window_id" ref="ve_conciliacion_seniat_action"/>
+    </record>
+    <record id="ve_conciliacion_seniat_action_view_form" model="ir.actions.act_window.view">
+        <field name="sequence">2</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="ve_conciliacion_seniat_view_form"/>
+        <field name="act_window_id" ref="ve_conciliacion_seniat_action"/>
+    </record>
+
+</odoo>

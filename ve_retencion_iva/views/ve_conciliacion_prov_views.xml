@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══ Lista IVA Proveedores por Período ════════════════════════════════════ -->
+    <record id="ve_conciliacion_prov_list" model="ir.ui.view">
+        <field name="name">ve.declaracion.iva.prov.list</field>
+        <field name="model">ve.declaracion.iva</field>
+        <field name="arch" type="xml">
+            <list string="Declaración IVA Proveedores por Período" default_order="periodo_retencion desc">
+                <field name="periodo_retencion"    string="Período"/>
+                <field name="fecha_inicio"         string="Inicio"/>
+                <field name="fecha_fin"            string="Fin"/>
+                <field name="count_wh_iva_prov"    string="Comp."/>
+                <field name="total_retenido_prov"  string="Total Retenido" sum="Total"/>
+                <field name="nro_declaracion_prov" string="N° Planilla de Pago" optional="show"/>
+                <field name="estado_prov" widget="badge"
+                       decoration-success="estado_prov == 'declarado'"
+                       decoration-warning="estado_prov == 'pendiente'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══ Formulario IVA Proveedores (independiente de Forma 030 / Clientes) ══ -->
+    <record id="ve_declaracion_iva_prov_form" model="ir.ui.view">
+        <field name="name">ve.declaracion.iva.prov.form</field>
+        <field name="model">ve.declaracion.iva</field>
+        <field name="arch" type="xml">
+            <form string="Declaraci&#xf3;n IVA Proveedores por Per&#xed;odo">
+                <header>
+                    <button name="action_generar_txt"
+                            string="Generar TXT"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-file-text-o"
+                            invisible="count_wh_iva_prov == 0"/>
+                    <button name="action_abrir_wizard_declarar_prov"
+                            string="Declarar IVA Proveedores"
+                            type="object"
+                            class="btn-primary"
+                            icon="fa-building"
+                            invisible="estado_prov == 'declarado'"/>
+                    <button name="action_declarar_rpa_prov"
+                            string="Declarar RPA"
+                            type="object"
+                            class="btn-secondary"
+                            icon="fa-android"
+                            invisible="estado_prov == 'declarado'"/>
+                    <field name="estado_prov" widget="statusbar"
+                           statusbar_visible="pendiente,declarado"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="periodo_retencion" string="Per&#xed;odo"/>
+                        <h1><field name="periodo_retencion" readonly="1"/></h1>
+                    </div>
+
+                    <group>
+                        <group string="Per&#xed;odo">
+                            <field name="fecha_inicio" readonly="1"/>
+                            <field name="fecha_fin"    readonly="1"/>
+                        </group>
+                        <group string="Resumen">
+                            <field name="count_wh_iva_prov"   string="Comprobantes"   readonly="1"/>
+                            <field name="total_retenido_prov" string="Total Retenido" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <div class="alert alert-warning" role="alert"
+                         invisible="estado_prov != 'declarado' or planilla_declaracion_prov_nombre">
+                        <i class="fa fa-exclamation-triangle" title="Advertencia"/>&#160;
+                        <strong>Declarado sin planilla adjunta</strong> —
+                        Recuerde subir el PDF de la Planilla de Pago SENIAT.
+                    </div>
+
+                    <!-- Datos de declaración (visibles cuando está declarado) -->
+                    <group invisible="estado_prov != 'declarado'"
+                           string="Declaraci&#xf3;n al SENIAT">
+                        <field name="nro_declaracion_prov"   string="N&#xb0; Planilla de Pago" readonly="1"/>
+                        <field name="declarado_prov_por_id"  string="Declarado por"            readonly="1"/>
+                        <field name="fecha_declaracion_prov" string="Fecha"                    readonly="1"/>
+                        <field name="planilla_declaracion_prov"
+                               widget="binary"
+                               string="Planilla SENIAT (PDF)"
+                               filename="planilla_declaracion_prov_nombre"/>
+                        <field name="planilla_declaracion_prov_nombre" invisible="1"/>
+                    </group>
+
+                    <notebook>
+                        <page string="Comprobantes Proveedores" name="proveedores">
+                            <field name="wh_iva_prov_ids" mode="list"
+                                   context="{'default_declaracion_iva_id': id}">
+                                <list string="Comprobantes Proveedores" create="0" delete="0">
+                                    <field name="name"                 string="N&#xb0; Comprobante"  readonly="1"/>
+                                    <field name="state"                string="Estado" widget="badge" readonly="1"
+                                           decoration-success="state == 'declarado'"
+                                           decoration-info="state == 'enviado'"
+                                           decoration-muted="state == 'anulado'"/>
+                                    <field name="fecha"                string="Fecha"           readonly="1"/>
+                                    <field name="partner_id"           string="Proveedor"       readonly="1"/>
+                                    <field name="rif"                  string="RIF"             readonly="1" optional="show"/>
+                                    <field name="invoice_name"         string="Factura"         readonly="1" optional="show"/>
+                                    <field name="nro_control"          string="N&#xb0; Control" readonly="1"/>
+                                    <field name="monto_base_16"        string="Base 16%"        sum="Total" readonly="1" class="text-end" column_class="text-end"/>
+                                    <field name="monto_iva_16"         string="IVA 16%"         sum="Total" readonly="1" class="text-end" column_class="text-end"/>
+                                    <field name="monto_base_8"         string="Base 8%"         sum="Total" readonly="1" optional="show" class="text-end" column_class="text-end"/>
+                                    <field name="monto_iva_8"          string="IVA 8%"          sum="Total" readonly="1" optional="show" class="text-end" column_class="text-end"/>
+                                    <field name="monto_iva_total"      string="IVA Total"       sum="Total" readonly="1" class="text-end" column_class="text-end"/>
+                                    <field name="porcentaje_retencion" string="%"               readonly="1" optional="show" class="text-end" column_class="text-end"/>
+                                    <field name="monto_retenido"       string="Retenido"        sum="Total" readonly="1" class="text-end" column_class="text-end"/>
+                                    <button name="action_abrir_form"
+                                            string="Abrir" type="object" icon="fa-external-link"
+                                            class="btn-sm btn-link"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ══ Acción IVA Proveedores ════════════════════════════════════════════════ -->
+    <record id="ve_conciliacion_prov_action" model="ir.actions.act_window">
+        <field name="name">Declaraci&#xf3;n IVA Proveedores por Per&#xed;odo</field>
+        <field name="res_model">ve.declaracion.iva</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_ids" eval="[
+            (5, 0, 0),
+            (0, 0, {'view_mode': 'list', 'view_id': ref('ve_conciliacion_prov_list')}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('ve_declaracion_iva_prov_form')}),
+        ]"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No hay declaraciones con retenciones a proveedores.
+            </p>
+        </field>
+    </record>
+
+</odoo>

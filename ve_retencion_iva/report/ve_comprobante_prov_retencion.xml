@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="report_comprobante_prov_retencion_template" model="ir.ui.view">
+        <field name="name">report.ve.wh.iva.prov.comprobante</field>
+        <field name="model">ve.wh.iva.prov</field>
+        <field name="type">qweb</field>
+        <field name="arch" type="xml">
+            <t t-name="ve_retencion_iva.report_comprobante_prov_retencion_template">
+                <t t-call="web.html_container">
+                    <t t-foreach="docs" t-as="o">
+                        <t t-set="company" t-value="o.env.company"/>
+                        <t t-call="ve_retencion_iva.ve_iva_layout">
+                        <div class="page">
+                            <style>
+                                .bloque { border:1px solid #444; padding:8px 10px; margin-bottom:6px; }
+                                .marca { font-size:8pt; font-weight:bold; color:#1F497D;
+                                         border-bottom:1px solid #ccc; padding-bottom:3px;
+                                         margin-bottom:6px; letter-spacing:1px; }
+                                div.titulo    { font-size:10.5pt; font-weight:bold; text-transform:uppercase; text-align:center; }
+                                div.subtitulo { font-size:7.5pt; color:#555; margin-top:2px; text-align:center; }
+                                .sec { background:#1F497D; color:#fff; font-weight:bold; font-size:8pt;
+                                       padding:1px 5px; margin:4px 0 2px 0; }
+                                table.t2 { width:100%; border-collapse:collapse; }
+                                table.t2 td.izq { width:50%; vertical-align:top; padding-right:4px; }
+                                table.t2 td.der { width:50%; vertical-align:top; padding-left:4px; }
+                                table.kv { width:100%; border-collapse:collapse; }
+                                table.kv td { border:1px solid #ccc; padding:1px 4px; font-size:8pt; }
+                                table.kv td.k { background:#EEF2FA; font-weight:bold; width:40%; }
+                                table.det { width:100%; border-collapse:collapse; margin-top:2px; }
+                                table.det th { background:#D9E1F2; border:1px solid #999;
+                                               padding:1px 3px; font-size:7.5pt; text-align:center; }
+                                table.det td { border:1px solid #ccc; padding:1px 4px; font-size:8pt; }
+                                table.det td.r { text-align:right; }
+                                table.det td.c { text-align:center; }
+                                table.det tr.tot td { font-weight:bold; background:#DFE9FA; }
+                                table.firma { width:100%; border-collapse:collapse; margin-top:22px; }
+                                table.firma td { text-align:center; border-top:1px solid #555;
+                                                 padding-top:3px; font-size:7.5pt; width:45%; }
+                                table.firma td.sp { border:none; width:10%; }
+                                hr.corte { border:none; border-top:2px dashed #888; margin:12px 0; }
+                                table.hdr-doc { width:100%; border-collapse:collapse; margin-bottom:6px; }
+                                table.hdr-doc td.tit { text-align:center; vertical-align:middle; padding:0 8px; }
+                                table.hdr-doc td.nro { width:140px; text-align:right; vertical-align:top; font-size:8pt; line-height:1.6; }
+                            </style>
+
+                            <t t-foreach="['ORIGINAL', 'COPIA']" t-as="marca">
+                                <div class="bloque">
+                                    <div class="marca"><t t-esc="marca"/></div>
+
+                                    <!-- Título y número -->
+                                    <table class="hdr-doc">
+                                        <tr>
+                                            <td class="tit">
+                                                <div class="titulo">Comprobante de Retenci&#xF3;n de IVA</div>
+                                                <div class="subtitulo">Art. 11 &#x2014; Providencia Administrativa SNAT/2025/000054</div>
+                                            </td>
+                                            <td class="nro">
+                                                <strong>N&#xB0;:</strong>&#160;<t t-esc="o.name or '---'"/><br/>
+                                                <strong>Ref.:</strong>&#160;<t t-esc="o.ref or '---'"/><br/>
+                                                <strong>Fecha:</strong>&#160;<t t-esc="str(o.fecha) if o.fecha else '---'"/><br/>
+                                                <strong>Per&#xED;odo:</strong>&#160;<t t-esc="o.periodo_retencion or '---'"/>
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                    <!-- Partes -->
+                                    <table class="t2">
+                                        <tr>
+                                            <td class="izq">
+                                                <div class="sec">AGENTE DE RETENCI&#xD3;N</div>
+                                                <table class="kv">
+                                                    <tr><td class="k">Nombre / Raz&#xF3;n Social</td>
+                                                        <td t-esc="company.name"/></tr>
+                                                    <tr><td class="k">RIF</td>
+                                                        <td t-esc="company.vat or '---'"/></tr>
+                                                </table>
+                                            </td>
+                                            <td class="der">
+                                                <div class="sec">PROVEEDOR RETENIDO</div>
+                                                <table class="kv">
+                                                    <tr><td class="k">Nombre / Raz&#xF3;n Social</td>
+                                                        <td t-esc="o.partner_id.name if o.partner_id else '---'"/></tr>
+                                                    <tr><td class="k">RIF</td>
+                                                        <td t-esc="o.rif or '---'"/></tr>
+                                                </table>
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                    <!-- Datos del documento -->
+                                    <div class="sec">DATOS DEL DOCUMENTO</div>
+                                    <table class="det">
+                                        <thead><tr>
+                                            <th>Factura Proveedor</th>
+                                            <th>N&#xB0; Control</th>
+                                        </tr></thead>
+                                        <tbody><tr>
+                                            <td class="c" t-esc="o.invoice_id.name if o.invoice_id else '---'"/>
+                                            <td class="c" t-esc="o.nro_control or '---'"/>
+                                        </tr></tbody>
+                                    </table>
+
+                                    <!-- Cálculo -->
+                                    <div class="sec">C&#xC1;LCULO DE LA RETENCI&#xD3;N</div>
+                                    <table class="det">
+                                        <thead><tr>
+                                            <th>Al&#xED;cuota</th>
+                                            <th>Base Imponible (Bs.)</th>
+                                            <th>Monto IVA (Bs.)</th>
+                                        </tr></thead>
+                                        <tbody>
+                                            <t t-if="o.monto_base_16">
+                                            <tr>
+                                                <td class="c">16%</td>
+                                                <td class="r" t-esc="'{:,.2f}'.format(o.monto_base_16)"/>
+                                                <td class="r" t-esc="'{:,.2f}'.format(o.monto_iva_16)"/>
+                                            </tr>
+                                            </t>
+                                            <t t-if="o.monto_base_8">
+                                            <tr>
+                                                <td class="c">8%</td>
+                                                <td class="r" t-esc="'{:,.2f}'.format(o.monto_base_8)"/>
+                                                <td class="r" t-esc="'{:,.2f}'.format(o.monto_iva_8)"/>
+                                            </tr>
+                                            </t>
+                                            <tr class="tot">
+                                                <td class="c">Total IVA</td>
+                                                <td class="r"></td>
+                                                <td class="r" t-esc="'{:,.2f}'.format(o.monto_iva_total)"/>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+
+                                    <!-- Retención -->
+                                    <table class="det" style="margin-top:4px;">
+                                        <thead><tr>
+                                            <th>% Retenci&#xF3;n</th>
+                                            <th>Monto Retenido (Bs.)</th>
+                                        </tr></thead>
+                                        <tbody><tr class="tot">
+                                            <td class="c" t-esc="'{:.0f}%'.format(o.porcentaje_retencion or 0)"/>
+                                            <td class="r" t-esc="'{:,.2f}'.format(o.monto_retenido or 0)"/>
+                                        </tr></tbody>
+                                    </table>
+
+                                    <!-- Firmas -->
+                                    <table class="firma">
+                                        <tr>
+                                            <td t-esc="company.name"/>
+                                            <td class="sp"/>
+                                            <td t-esc="o.partner_id.name if o.partner_id else ''"/>
+                                        </tr>
+                                        <tr>
+                                            <td style="color:#666;">Agente de Retenci&#xF3;n</td>
+                                            <td class="sp"/>
+                                            <td style="color:#666;">Proveedor Retenido</td>
+                                        </tr>
+                                    </table>
+                                </div><!-- /bloque -->
+
+                                <t t-if="marca == 'ORIGINAL'">
+                                    <hr class="corte"/>
+                                </t>
+                            </t><!-- /foreach marca -->
+                        </div><!-- /page -->
+                        </t><!-- /ve_iva_layout -->
+                    </t><!-- /foreach docs -->
+                </t><!-- /html_container -->
+            </t>
+        </field>
+    </record>
+
+    <record id="action_report_comprobante_prov_retencion" model="ir.actions.report">
+        <field name="name">Comprobante Retenci&#xF3;n IVA Proveedor</field>
+        <field name="model">ve.wh.iva.prov</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">ve_retencion_iva.report_comprobante_prov_retencion_template</field>
+        <field name="report_file">ve_retencion_iva.report_comprobante_prov_retencion_template</field>
+        <field name="paperformat_id" ref="paperformat_iva_portrait"/>
+    </record>
+
+</odoo>

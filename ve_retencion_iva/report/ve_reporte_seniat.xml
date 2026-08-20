@@ -1,0 +1,487 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="report_reporte_seniat_template" model="ir.ui.view">
+        <field name="name">report.ve.retencion.iva.seniat</field>
+        <field name="model">ve.declaracion.iva</field>
+        <field name="type">qweb</field>
+        <field name="arch" type="xml">
+            <t t-name="ve_retencion_iva.report_reporte_seniat_template">
+                <t t-call="web.html_container">
+                    <t t-foreach="docs" t-as="o">
+                        <t t-call="ve_retencion_iva.ve_iva_layout">
+                        <div class="page">
+
+                                <style>
+                                    .rep-tit { text-align:center; font-weight:bold; font-size:10.5pt;
+                                               text-transform:uppercase; margin:0 0 8px 0; }
+                                    .pg      { page-break-after:always; }
+                                    table.tper { width:100%; border-collapse:collapse; margin:0 0 14px 0; }
+                                    table.tper td { border:1px solid #999; padding:2px 5px; font-size:8pt; }
+                                    table.tper td.lbl { background:#D9E1F2; font-weight:bold; width:22%; }
+                                    div.sec { background:#1F497D; color:#fff; font-weight:bold;
+                                              font-size:8.5pt; padding:3px 5px; margin:10px 0 2px 0; }
+                                    table.ts { width:100%; border-collapse:collapse; margin-bottom:4px; }
+                                    table.ts th { background:#D9E1F2; border:1px solid #888;
+                                                  padding:2px 3px; text-align:center; font-size:7pt; }
+                                    table.ts td { border:1px solid #bbb; padding:2px 3px;
+                                                  font-size:7.5pt; vertical-align:middle; }
+                                    table.ts td.n   { text-align:center; width:16px; }
+                                    table.ts td.cam { text-align:center; width:26px; }
+                                    table.ts td.mon { text-align:right;  width:88px; }
+                                    table.ts tr.sub td { background:#F5F5F5; }
+                                    table.ts tr.tot td { background:#DFE9FA; font-weight:bold; }
+                                    div.foot { font-size:6.5pt; color:#888; border-top:1px solid #ccc;
+                                               padding-top:2px; margin-top:6px; }
+                                </style>
+
+                                <!-- ===== P&#xC1;GINA 1: D&#xC9;BITOS + CR&#xC9;DITOS ===== -->
+                                <div class="pg">
+
+                                    <div class="rep-tit">Reporte para la Declaraci&#xF3;n de Impuesto al Valor Agregado (IVA)</div>
+
+                                    <table class="tper">
+                                        <tr>
+                                            <td class="lbl">Per&#xED;odo Declaraci&#xF3;n</td>
+                                            <td style="width:28%;" t-esc="o.periodo_retencion or o.conciliacion_id.periodo or ''"/>
+                                            <td class="lbl">Fecha</td>
+                                            <td>
+                                                <t t-esc="str(o.fecha_inicio) if o.fecha_inicio else '---'"/>
+                                                &#160;al&#160;
+                                                <t t-esc="str(o.fecha_fin) if o.fecha_fin else '---'"/>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td class="lbl">Contribuyente</td>
+                                            <td t-esc="o.env.company.name"/>
+                                            <td class="lbl">RIF</td>
+                                            <td t-esc="o.env.company.vat or '---'"/>
+                                        </tr>
+                                    </table>
+
+                                    <!-- D&#xC9;BITOS FISCALES -->
+                                    <div class="sec">D&#xC9;BITOS FISCALES</div>
+                                    <table class="ts">
+                                        <thead>
+                                            <tr>
+                                                <th rowspan="2" class="n">#</th>
+                                                <th rowspan="2" style="text-align:left;">Descripci&#xF3;n</th>
+                                                <th colspan="2">BASE IMPONIBLE</th>
+                                                <th colspan="2">D&#xC9;BITO FISCAL</th>
+                                            </tr>
+                                            <tr>
+                                                <th class="cam">Campo</th><th class="mon">Monto (Bs.)</th>
+                                                <th class="cam">Campo</th><th class="mon">Monto (Bs.)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td class="n">1</td>
+                                                <td>Ventas Internas no Gravadas</td>
+                                                <td class="cam">40</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">2</td>
+                                                <td>Ventas de Exportaci&#xF3;n</td>
+                                                <td class="cam">41</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">3</td>
+                                                <td>Ventas Internas Gravadas por Al&#xED;cuota General</td>
+                                                <td class="cam">42</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_42_base) if o.campo_42_base else ''"/>
+                                                <td class="cam">43</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_42_debito) if o.campo_42_debito else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">4</td>
+                                                <td>Ventas Gravadas por Al&#xED;cuota General m&#xE1;s Al&#xED;cuota Adicional</td>
+                                                <td class="cam">442</td><td class="mon"></td>
+                                                <td class="cam">452</td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">5</td>
+                                                <td>Ventas Internas Gravadas por Al&#xED;cuota Reducida</td>
+                                                <td class="cam">443</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_443_base) if o.campo_443_base else ''"/>
+                                                <td class="cam">453</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_453_debito) if o.campo_453_debito else ''"/>
+                                            </tr>
+                                            <tr class="sub">
+                                                <td class="n">6</td>
+                                                <td>Total Ventas y D&#xE9;bito Fiscal para efectos de Determinaci&#xF3;n</td>
+                                                <td class="cam">46</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_42_base + o.campo_443_base) if (o.campo_42_base or o.campo_443_base) else ''"/>
+                                                <td class="cam">47</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_42_debito + o.campo_453_debito) if (o.campo_42_debito or o.campo_453_debito) else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">7</td>
+                                                <td>Ajustes a los D&#xE9;bitos Fiscales de per&#xED;odos anteriores</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">48</td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">8</td>
+                                                <td>Certificados de D&#xE9;bitos Fiscales Exonerados (recibos de entes exonerados), Registro del Per&#xED;odo</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">80</td><td class="mon"></td>
+                                            </tr>
+                                            <tr class="tot">
+                                                <td class="n">9</td>
+                                                <td>Total D&#xE9;bitos Fiscales</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">49</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_49) if o.campo_49 else ''"/>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+
+                                    <!-- CR&#xC9;DITOS FISCALES -->
+                                    <div class="sec">CR&#xC9;DITOS FISCALES</div>
+                                    <table class="ts">
+                                        <thead>
+                                            <tr>
+                                                <th rowspan="2" class="n">#</th>
+                                                <th rowspan="2" style="text-align:left;">Descripci&#xF3;n</th>
+                                                <th colspan="2">BASE IMPONIBLE</th>
+                                                <th colspan="2">CR&#xC9;DITO FISCAL</th>
+                                            </tr>
+                                            <tr>
+                                                <th class="cam">Campo</th><th class="mon">Monto (Bs.)</th>
+                                                <th class="cam">Campo</th><th class="mon">Monto (Bs.)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td class="n">10</td>
+                                                <td>Compras no Gravadas y/o sin Derecho a Cr&#xE9;dito Fiscal</td>
+                                                <td class="cam">30</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">11</td>
+                                                <td>Importaciones Gravadas por Al&#xED;cuota General</td>
+                                                <td class="cam">31</td><td class="mon"></td>
+                                                <td class="cam">32</td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">12</td>
+                                                <td>Importaciones Gravadas por Al&#xED;cuota General m&#xE1;s Al&#xED;cuota Adicional</td>
+                                                <td class="cam">312</td><td class="mon"></td>
+                                                <td class="cam">322</td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">13</td>
+                                                <td>Importaciones Gravadas por Al&#xED;cuota Reducida</td>
+                                                <td class="cam">313</td><td class="mon"></td>
+                                                <td class="cam">323</td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">14</td>
+                                                <td>Compras Internas Gravadas por Al&#xED;cuota General</td>
+                                                <td class="cam">33</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_33_base) if o.campo_33_base else ''"/>
+                                                <td class="cam">34</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_33_credito) if o.campo_33_credito else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">15</td>
+                                                <td>Compras Internas Gravadas por Al&#xED;cuota General m&#xE1;s Al&#xED;cuota Adicional</td>
+                                                <td class="cam">332</td><td class="mon"></td>
+                                                <td class="cam">342</td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">16</td>
+                                                <td>Compras Internas Gravadas por Al&#xED;cuota Reducida</td>
+                                                <td class="cam">333</td><td class="mon"></td>
+                                                <td class="cam">343</td><td class="mon"></td>
+                                            </tr>
+                                            <tr class="sub">
+                                                <td class="n">17</td>
+                                                <td>Total Compras y Cr&#xE9;ditos Fiscales del Per&#xED;odo</td>
+                                                <td class="cam">35</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_33_base) if o.campo_33_base else ''"/>
+                                                <td class="cam">36</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_33_credito) if o.campo_33_credito else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">18</td>
+                                                <td>Cr&#xE9;ditos Fiscales Totalmente Deducibles</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">70</td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">19</td>
+                                                <td>Cr&#xE9;ditos Fiscales producto de la Aplicaci&#xF3;n del porcentaje de la prorrata</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">37</td><td class="mon"></td>
+                                            </tr>
+                                            <tr class="sub">
+                                                <td class="n">20</td>
+                                                <td>Total cr&#xE9;ditos fiscales deducibles &#x2014; operaci&#xF3;n (70 + 37)</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">71</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_71) if o.campo_71 else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">21</td>
+                                                <td>Excedente Cr&#xE9;ditos Fiscales del mes Anterior (&#xED;tem 60)</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">20</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_20) if o.campo_20 else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">22</td>
+                                                <td>Reintegro Solicitado (s&#xF3;lo Exportadores)</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">21</td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">23</td>
+                                                <td>Reintegro Solicitado (s&#xF3;lo quien suministre bienes o preste servicios a entes exonerados)</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">81</td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">24</td>
+                                                <td>Ajustes a los Cr&#xE9;ditos Fiscales de per&#xED;odos anteriores</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">38</td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">25</td>
+                                                <td>Certificados de D&#xE9;bitos Fiscales Exonerados (emitidos por entes exonerados). Registrado en el per&#xED;odo</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">82</td><td class="mon"></td>
+                                            </tr>
+                                            <tr class="tot">
+                                                <td class="n">26</td>
+                                                <td>Total Cr&#xE9;ditos Fiscales</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">39</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_39) if o.campo_39 else ''"/>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+
+                                </div><!-- fin p&#xE1;g 1 -->
+
+                                <!-- ===== P&#xC1;GINA 2: AUTOLIQUIDACI&#xD3;N ===== -->
+                                <div>
+
+                                    <div class="rep-tit">Reporte para la Declaraci&#xF3;n de Impuesto al Valor Agregado (IVA)</div>
+
+                                    <table class="tper">
+                                        <tr>
+                                            <td class="lbl">Per&#xED;odo Declaraci&#xF3;n</td>
+                                            <td style="width:28%;" t-esc="o.periodo_retencion or o.conciliacion_id.periodo or ''"/>
+                                            <td class="lbl">Fecha</td>
+                                            <td>
+                                                <t t-esc="str(o.fecha_inicio) if o.fecha_inicio else '---'"/>
+                                                &#160;al&#160;
+                                                <t t-esc="str(o.fecha_fin) if o.fecha_fin else '---'"/>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td class="lbl">Contribuyente</td>
+                                            <td t-esc="o.env.company.name"/>
+                                            <td class="lbl">RIF</td>
+                                            <td t-esc="o.env.company.vat or '---'"/>
+                                        </tr>
+                                    </table>
+
+                                    <div class="sec">AUTOLIQUIDACI&#xD3;N</div>
+                                    <table class="ts">
+                                        <thead>
+                                            <tr>
+                                                <th class="n">#</th>
+                                                <th style="text-align:left;">Descripci&#xF3;n</th>
+                                                <th class="cam">Campo</th>
+                                                <th class="mon">Monto</th>
+                                                <th class="cam">Campo</th>
+                                                <th class="mon">Monto (Bs.)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td class="n">27</td>
+                                                <td>Total Cuota Tributaria del Per&#xED;odo</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">53</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(max(0.0, o.campo_49 - o.campo_39)) if (o.campo_49 or o.campo_39) else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">28</td>
+                                                <td>Excedente de Cr&#xE9;dito Fiscal para el mes siguiente</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">60</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(max(0.0, o.campo_39 - o.campo_49)) if (o.campo_49 or o.campo_39) else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">29</td>
+                                                <td>Impuesto pagado en Declaraci&#xF3;n(es) Sustituida(s)</td>
+                                                <td class="cam">22</td><td class="mon">0.00</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">30</td>
+                                                <td>Retenciones Descontadas en Declaraci&#xF3;n(es) Sustituida(s)</td>
+                                                <td class="cam">51</td><td class="mon">0.00</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">31</td>
+                                                <td>Percepciones Descontadas en Declaraci&#xF3;n(es) Sustituida(s)</td>
+                                                <td class="cam">24</td><td class="mon">0.00</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr class="sub">
+                                                <td class="n">32</td>
+                                                <td>Sub-total Impuesto a Pagar</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">78</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(max(0.0, o.campo_49 - o.campo_39)) if (o.campo_49 or o.campo_39) else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">33</td>
+                                                <td>Retenciones Acumuladas por Descontar</td>
+                                                <td class="cam">54</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_54_arrastre) if o.campo_54_arrastre else ''"/>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">34</td>
+                                                <td>Retenciones del Per&#xED;odo</td>
+                                                <td class="cam">66</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_66) if o.campo_66 else ''"/>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">35</td>
+                                                <td>Cr&#xE9;ditos Adquiridos por Cesi&#xF3;n de Retenciones</td>
+                                                <td class="cam">72</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">36</td>
+                                                <td>Recuperaci&#xF3;n de Retenciones Solicitado (saldo con antig&#xFC;edad mayor a dos per&#xED;odos impositivos)</td>
+                                                <td class="cam">73</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr class="sub">
+                                                <td class="n">37</td>
+                                                <td>Total Retenciones</td>
+                                                <td class="cam">74</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_74) if o.campo_74 else ''"/>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">38</td>
+                                                <td>Retenciones Soportadas y Descontadas en esta Declaraci&#xF3;n</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">55</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(o.campo_66) if o.campo_66 else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">39</td>
+                                                <td>Saldo de Retenciones de IVA no aplicado</td>
+                                                <td class="cam">67</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr class="sub">
+                                                <td class="n">40</td>
+                                                <td>Sub-total Impuesto a Pagar</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">56</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(max(0.0, o.campo_90)) if (o.campo_42_debito or o.campo_33_credito or o.campo_66) else ''"/>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">41</td>
+                                                <td>Percepciones Acumuladas en Importaciones por Descontar</td>
+                                                <td class="cam">57</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">42</td>
+                                                <td>Percepciones del Per&#xED;odo</td>
+                                                <td class="cam">68</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">43</td>
+                                                <td>Cr&#xE9;ditos Adquiridos por Cesi&#xF3;n de Percepciones</td>
+                                                <td class="cam">75</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">44</td>
+                                                <td>Recuperaci&#xF3;n de Percepciones Solicitado (saldo con antig&#xFC;edad mayor a dos per&#xED;odos impositivos)</td>
+                                                <td class="cam">76</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr class="sub">
+                                                <td class="n">45</td>
+                                                <td>Total Percepciones</td>
+                                                <td class="cam">77</td><td class="mon">0.00</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">46</td>
+                                                <td>Percepciones en Aduanas Descontadas en esta Declaraci&#xF3;n</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">58</td><td class="mon">0.00</td>
+                                            </tr>
+                                            <tr>
+                                                <td class="n">47</td>
+                                                <td>Saldo de Percepciones en Aduanas no Aplicado</td>
+                                                <td class="cam">69</td><td class="mon"></td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                            </tr>
+                                            <tr class="tot">
+                                                <td class="n">48</td>
+                                                <td>Total a Pagar</td>
+                                                <td class="cam"></td><td class="mon"></td>
+                                                <td class="cam">90</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(max(0.0, o.campo_90))"/>
+                                            </tr>
+                                            <tr t-if="o.campo_90 &lt; 0" style="background:#FFF3CD;">
+                                                <td class="n"></td>
+                                                <td colspan="3" style="font-style:italic; color:#856404;">
+                                                    Excedente de retenciones &#x2014; pasa como C.54 (arrastre) al siguiente per&#xED;odo
+                                                </td>
+                                                <td class="cam">54*</td>
+                                                <td class="mon" t-esc="'{:,.2f}'.format(-o.campo_90)"/>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+
+                                    <div class="foot">
+                                        Reporte ve_retencion_iva &#xB7; Odoo 19 &#xB7; DJCS &#xB7;
+                                        Campo 42/43: ventas gravadas (Ret. Odoo) &#xB7;
+                                        Campo 33/34: compras gravadas (Ret. SENIAT) &#xB7;
+                                        Campo 66: retenciones soportadas del per&#xED;odo
+                                    </div>
+
+                                </div><!-- fin p&#xE1;g 2 -->
+
+                        </div><!-- /page -->
+                        </t><!-- /ve_iva_layout -->
+                    </t><!-- /foreach -->
+                </t><!-- /html_container -->
+            </t>
+        </field>
+    </record>
+
+    <record id="action_report_reporte_seniat" model="ir.actions.report">
+        <field name="name">Reporte SENIAT</field>
+        <field name="model">ve.declaracion.iva</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">ve_retencion_iva.report_reporte_seniat_template</field>
+        <field name="report_file">ve_retencion_iva.report_reporte_seniat_template</field>
+        <field name="paperformat_id" ref="paperformat_iva_portrait"/>
+    </record>
+
+</odoo>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Herencia del formulario de contacto: agrega pestaña de retenciones IVA -->
+    <record id="res_partner_view_form_ve_retencion" model="ir.ui.view">
+        <field name="name">res.partner.form.ve.retencion</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <notebook position="inside">
+                <page string="Retenciones IVA (VE)" name="ve_retencion">
+                    <group string="Configuraci&#xF3;n Agente de Retenci&#xF3;n SPE">
+                        <field name="es_agente_retencion"/>
+                        <field name="porcentaje_retencion_default"
+                               invisible="not es_agente_retencion"
+                               string="% Retenci&#xF3;n por Defecto"/>
+                        <field name="validado_seniat"/>
+                    </group>
+                </page>
+            </notebook>
+        </field>
+    </record>
+
+    <!-- Herencia de la lista de Contactos: columnas SPE y Validado SENIAT -->
+    <record id="res_partner_view_list_ve_retencion" model="ir.ui.view">
+        <field name="name">res.partner.list.ve.retencion</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_tree"/>
+        <field name="arch" type="xml">
+            <field name="email" position="after">
+                <field name="es_agente_retencion" string="SPE" optional="show"/>
+                <field name="validado_seniat" string="Validado SENIAT" optional="show"/>
+            </field>
+        </field>
+    </record>
+
+</odoo>

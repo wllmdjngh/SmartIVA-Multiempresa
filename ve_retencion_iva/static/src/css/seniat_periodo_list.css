@@ -1,0 +1,50 @@
+/* Ajuste de anchos de columna — lista "Retenciones SENIAT por Período"
+   (ve.conciliacion.periodo, vista ve_conciliacion_seniat_view_list).
+
+   Odoo no tiene un atributo width= declarativo en vistas list -- este
+   ajuste queda por selector data-name, que es GLOBAL a todo el backend,
+   no exclusivo de esta lista. fecha_estado_extraccion y n_seniat son
+   campos usados solo acá, sin riesgo de fuga. total_seniat también
+   aparece en la lista "Conciliación SENIAT" (columna "SENIAT") --
+   ensancharla ahí también es aceptable (nunca perjudica tener más
+   espacio), pedido explícito de la usuaria 2026-08-05 tras confirmar
+   que Odoo no ofrece una forma nativa de scoparlo a una sola vista. */
+
+.o_list_renderer th[data-name="fecha_estado_extraccion"],
+.o_list_renderer td[data-name="fecha_estado_extraccion"] {
+    max-width: 120px;
+}
+
+.o_list_renderer th[data-name="n_seniat"],
+.o_list_renderer td[data-name="n_seniat"] {
+    min-width: 110px;
+}
+
+.o_list_renderer th[data-name="total_seniat"],
+.o_list_renderer td[data-name="total_seniat"] {
+    min-width: 170px;
+}
+
+/* Lista "Facturas con Diferencia" (ve_wh_iva_view_list_diferencias_archivo)
+   -- pedido explícito 2026-08-06: diferenciar a simple vista qué columnas
+   vienen del archivo del cliente (Libro de Ventas) y cuáles calculó Odoo.
+   Scopeado con .o_list_diferencias_archivo (class= en la raíz <list> de
+   ESA vista) para no pintar monto_retenido/porcentaje_retencion en
+   cualquier otra lista del módulo que reuse esos mismos nombres de campo. */
+.o_list_diferencias_archivo th[data-name="monto_iva_archivo"],
+.o_list_diferencias_archivo td[data-name="monto_iva_archivo"],
+.o_list_diferencias_archivo th[data-name="monto_retenido_archivo"],
+.o_list_diferencias_archivo td[data-name="monto_retenido_archivo"] {
+    background-color: rgba(47, 100, 89, 0.08);
+}
+
+.o_list_diferencias_archivo th[data-name="base_imponible_total"],
+.o_list_diferencias_archivo td[data-name="base_imponible_total"],
+.o_list_diferencias_archivo th[data-name="monto_iva_total"],
+.o_list_diferencias_archivo td[data-name="monto_iva_total"],
+.o_list_diferencias_archivo th[data-name="porcentaje_retencion"],
+.o_list_diferencias_archivo td[data-name="porcentaje_retencion"],
+.o_list_diferencias_archivo th[data-name="monto_retenido"],
+.o_list_diferencias_archivo td[data-name="monto_retenido"] {
+    background-color: rgba(138, 106, 31, 0.08);
+}

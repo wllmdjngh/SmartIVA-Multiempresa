@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══ Lista ═══════════════════════════════════════════════════════════════ -->
+    <record id="ve_conecta_carga_compras_view_list" model="ir.ui.view">
+        <field name="name">ve.conecta.carga.compras.list</field>
+        <field name="model">ve.conecta.carga.compras</field>
+        <field name="arch" type="xml">
+            <list string="Cargas Libro de Compras">
+                <field name="name"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+                <field name="archivo_nombre" string="Archivo"/>
+                <field name="count_lineas" string="Filas"/>
+                <field name="count_brechas" string="Brechas"/>
+                <field name="estado" widget="badge"
+                       decoration-warning="estado == 'borrador'"
+                       decoration-success="estado == 'confirmado'"/>
+                <field name="confirmado_por_id" optional="show"/>
+                <field name="fecha_confirmacion" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ══ Formulario ══════════════════════════════════════════════════════════ -->
+    <record id="ve_conecta_carga_compras_view_form" model="ir.ui.view">
+        <field name="name">ve.conecta.carga.compras.form</field>
+        <field name="model">ve.conecta.carga.compras</field>
+        <field name="arch" type="xml">
+            <form string="Carga Libro de Compras — SmartIVA Conecta">
+                <header>
+                    <button name="action_previsualizar"
+                            string="Previsualizar"
+                            type="object"
+                            class="btn-primary"
+                            invisible="not archivo or estado == 'confirmado'"/>
+                    <button name="action_confirmar"
+                            string="Confirmar Carga"
+                            type="object"
+                            class="btn-primary"
+                            confirm="Se van a crear las facturas de compra (y las retenciones IVA Proveedores donde el feed traiga monto retenido) a partir de las filas de abajo. ¿Confirmar?"
+                            invisible="not linea_ids or estado == 'confirmado'"/>
+                    <button name="action_deshacer"
+                            string="Deshacer Carga"
+                            type="object"
+                            class="btn-danger"
+                            confirm="Se van a eliminar TODAS las facturas/retenciones creadas por esta carga (los proveedores creados se conservan). La carga vuelve a Borrador. ¿Confirmar?"
+                            invisible="estado != 'confirmado'"/>
+                    <field name="estado" widget="statusbar" statusbar_visible="borrador,confirmado"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+
+                    <div class="alert alert-info" role="status" invisible="estado == 'confirmado'">
+                        <strong>Columnas reconocidas:</strong>
+                        RIF &#183; Proveedor &#183; N&#176; Control (opcional) &#183;
+                        N&#176; de Factura &#183; Fecha &#183;
+                        Base 16% &#183; Base 8% &#183; Sin Cr&#233;dito Fiscal &#183;
+                        IVA Retenido al Vendedor (opcional) &#183; N&#176; de Comprobante (Retenci&#243;n).<br/>
+                        <strong>Formato alternativo</strong> tambi&#233;n aceptado (ej. exports de
+                        Profit Plus): una sola columna <b>Base Imponible</b> + <b>% Al&#237;c.</b>
+                        por fila, en vez de Base 16%/8% separadas &#8212; y si el archivo trae
+                        <b>2 filas por transacci&#243;n</b> (una con la factura, otra con el
+                        comprobante de retenci&#243;n vinculada por <b>N&#176; de Factura Afectada</b>),
+                        la vista previa muestra <b>ambas filas tal cual vienen</b> &#8212; al confirmar,
+                        la primera fila crea la factura y la segunda crea la retenci&#243;n vinculada
+                        a esa factura.<br/>
+                        Primera fila del archivo = encabezados. Formatos aceptados: CSV o XLSX.
+                    </div>
+
+                    <div class="alert alert-danger" role="alert" invisible="count_bloqueantes == 0 or estado == 'confirmado'">
+                        <i class="fa fa-ban" title="Bloqueado"/>&#160;
+                        <field name="count_bloqueantes" nolabel="1" readonly="1" class="d-inline"/>
+                        fila(s) bloqueada(s) (sin RIF, sin N&#176; de Factura, o duplicadas) —
+                        no se puede confirmar hasta corregirlas o eliminarlas.
+                    </div>
+                    <div class="alert alert-warning" role="alert" invisible="count_brechas == count_bloqueantes or estado == 'confirmado'">
+                        <i class="fa fa-exclamation-triangle" title="Advertencia"/>&#160;
+                        Hay filas con brechas informativas (proveedor nuevo) — revise la
+                        columna "Brecha", no bloquean la confirmaci&#243;n.
+                    </div>
+
+                    <group>
+                        <group>
+                            <field name="company_id" groups="base.group_multi_company" readonly="estado == 'confirmado'"/>
+                            <field name="archivo" widget="binary" filename="archivo_nombre"
+                                   readonly="estado == 'confirmado'"/>
+                            <field name="archivo_nombre" invisible="1"/>
+                            <field name="formato_fecha" readonly="estado == 'confirmado'"/>
+                        </group>
+                        <group invisible="estado != 'confirmado'">
+                            <field name="confirmado_por_id" readonly="1"/>
+                            <field name="fecha_confirmacion" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <field name="linea_ids" readonly="estado == 'confirmado'">
+                        <list editable="bottom" decoration-danger="bloqueante" decoration-warning="brecha and not bloqueante">
+                            <field name="fila" readonly="1"/>
+                            <field name="rif"/>
+                            <field name="nombre_proveedor"/>
+                            <field name="nro_control"/>
+                            <field name="nro_documento"/>
+                            <field name="nro_factura_afectada" optional="show"/>
+                            <field name="fecha"/>
+                            <field name="base_16" sum="Total"/>
+                            <field name="base_8" sum="Total"/>
+                            <field name="base_sin_credito" sum="Total" optional="show"/>
+                            <field name="monto_retenido" sum="Total" optional="show"/>
+                            <field name="nro_comp_retencion" optional="show"/>
+                            <field name="partner_id" string="Proveedor (match)"/>
+                            <field name="brecha" widget="badge"
+                                   decoration-danger="bloqueante"
+                                   decoration-warning="brecha and not bloqueante"/>
+                            <field name="invoice_id" readonly="1" optional="show"/>
+                            <field name="wh_iva_prov_id" readonly="1" optional="show"/>
+                            <field name="bloqueante" column_invisible="1"/>
+                            <field name="estado_carga" column_invisible="1"/>
+                        </list>
+                    </field>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="ve_conecta_carga_compras_action" model="ir.actions.act_window">
+        <field name="name">Cargar Libro de Compras (Conecta)</field>
+        <field name="res_model">ve.conecta.carga.compras</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+</odoo>

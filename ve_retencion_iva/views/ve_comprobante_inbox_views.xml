@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══ Lista ════════════════════════════════════════════════════════════ -->
+    <record id="ve_comprobante_inbox_view_list" model="ir.ui.view">
+        <field name="name">ve.comprobante.inbox.list</field>
+        <field name="model">ve.comprobante.inbox</field>
+        <field name="arch" type="xml">
+            <list string="Buz&#xF3;n de Comprobantes"
+                  decoration-success="estado == 'procesado'"
+                  decoration-warning="estado in ('sin_match', 'con_diferencias', 'duplicado')"
+                  decoration-danger="estado in ('error', 'rechazado')"
+                  decoration-muted="estado in ('pendiente', 'cerrado')">
+                <field name="company_id" string="Compa&#xF1;&#xED;a" optional="show"
+                       groups="base.group_multi_company"/>
+                <field name="canal_origen" widget="badge"
+                       decoration-success="canal_origen == 'whatsapp'"
+                       decoration-info="canal_origen == 'email'"/>
+                <field name="fecha_email"          string="Fecha"/>
+                <field name="email_from"            string="Remitente / Tel."/>
+                <field name="email_asunto"          string="Asunto / Contacto"/>
+                <field name="tipo_documento"        optional="show"/>
+                <field name="ocr_nro_control"       string="N&#xB0; Control"/>
+                <field name="ocr_rif"               string="RIF"/>
+                <field name="ocr_nro_comprobante"   string="N&#xB0; Comprobante"/>
+                <field name="ocr_monto_retenido"    string="Monto (OCR)"/>
+                <field name="monto_esperado"        string="Monto Esperado"
+                       invisible="not monto_esperado"/>
+                <field name="wh_iva_id"             string="Retenci&#xF3;n"/>
+                <field name="estado" widget="badge"
+                       decoration-success="estado == 'procesado'"
+                       decoration-warning="estado in ('sin_match', 'con_diferencias', 'duplicado')"
+                       decoration-danger="estado in ('error', 'rechazado')"
+                       decoration-muted="estado in ('pendiente', 'cerrado')"/>
+                <button name="action_procesar" type="object"
+                        string="Re-intentar" class="btn-sm btn-primary"
+                        invisible="estado not in ('pendiente','error','sin_match','rechazado','duplicado')"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Server action para marcar como Procesado desde selección múltiple -->
+    <record id="action_server_comprobante_inbox_cerrar" model="ir.actions.server">
+        <field name="name">Marcar Procesado</field>
+        <field name="model_id" ref="model_ve_comprobante_inbox"/>
+        <field name="binding_model_id" ref="model_ve_comprobante_inbox"/>
+        <field name="binding_type">action</field>
+        <field name="state">code</field>
+        <field name="code">action = records.action_cerrar()</field>
+    </record>
+
+    <!-- ══ Formulario ═══════════════════════════════════════════════════════ -->
+    <record id="ve_comprobante_inbox_view_form" model="ir.ui.view">
+        <field name="name">ve.comprobante.inbox.form</field>
+        <field name="model">ve.comprobante.inbox</field>
+        <field name="arch" type="xml">
+            <form string="Email Comprobante">
+                <header>
+                    <button name="action_procesar" type="object"
+                            string="Re-intentar" class="btn-primary"
+                            invisible="estado not in ('pendiente','error','sin_match','rechazado','duplicado')"/>
+                    <button name="action_cerrar" type="object"
+                            string="Marcar Procesado" class="btn-secondary"
+                            confirm="¿Confirma que no hará más nada con este registro?"
+                            invisible="estado not in ('con_diferencias','sin_match','rechazado','duplicado','error')"/>
+                    <button name="action_vincular_manual" type="object"
+                            string="Vincular" class="btn-secondary"
+                            invisible="estado in ('procesado', 'cerrado')"/>
+                    <field name="estado" widget="statusbar"
+                           statusbar_visible="pendiente,procesado,cerrado"/>
+                </header>
+                <div class="alert alert-warning" role="alert" invisible="estado != 'con_diferencias'">
+                    <strong>⚠ Diferencia de monto detectada.</strong>
+                    El monto le&#xED;do del comprobante no coincide con el monto esperado calculado por SmartIVA — revisar el detalle en el chatter.
+                </div>
+                <sheet>
+                    <group>
+                        <group string="Mensaje Recibido">
+                            <field name="canal_origen" readonly="1" widget="badge"
+                                   decoration-success="canal_origen == 'whatsapp'"
+                                   decoration-info="canal_origen == 'email'"/>
+                            <field name="fecha_email"  readonly="1"/>
+                            <field name="email_from"   readonly="1" string="Remitente / Tel."/>
+                            <field name="email_asunto" readonly="1" string="Asunto / Contacto"/>
+                        </group>
+                        <group string="Datos Extraídos (OCR)">
+                            <field name="tipo_documento"      readonly="1" widget="badge"
+                                   decoration-success="tipo_documento == 'retencion_iva'"
+                                   decoration-warning="tipo_documento not in ('retencion_iva', False)"/>
+                            <field name="ocr_nro_control"     readonly="1"/>
+                            <field name="ocr_rif"             readonly="1"/>
+                            <field name="ocr_nombre_agente"   readonly="1"/>
+                            <field name="ocr_sujeto_rif"      readonly="1"/>
+                            <field name="ocr_sujeto_nombre"   readonly="1"/>
+                            <field name="ocr_nro_comprobante" readonly="1"/>
+                            <field name="ocr_periodo"         readonly="1"/>
+                            <field name="ocr_monto_retenido"  readonly="1"/>
+                            <field name="monto_esperado"      readonly="1"
+                                   invisible="not monto_esperado"/>
+                        </group>
+                    </group>
+                    <group string="Retenci&#xF3;n Vinculada" invisible="not wh_iva_id">
+                        <field name="wh_iva_id" readonly="1"/>
+                    </group>
+                    <group string="Vincular Manualmente" invisible="estado in ('procesado', 'cerrado')">
+                        <field name="wh_iva_link_id"/>
+                    </group>
+                    <separator string="Log de Procesamiento" invisible="not log"/>
+                    <field name="log" nolabel="1" readonly="1" invisible="not log"
+                           style="width:100%; font-family:monospace; font-size:12px; white-space:pre-wrap;"/>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ══ Búsqueda ═════════════════════════════════════════════════════════ -->
+    <record id="ve_comprobante_inbox_view_search" model="ir.ui.view">
+        <field name="name">ve.comprobante.inbox.search</field>
+        <field name="model">ve.comprobante.inbox</field>
+        <field name="arch" type="xml">
+            <search string="Buscar Buz&#xF3;n">
+                <field name="company_id" groups="base.group_multi_company"/>
+                <filter name="necesita_atencion" string="Necesita atenci&#xF3;n"
+                        domain="[('estado','not in',('procesado','cerrado'))]"/>
+                <separator/>
+                <filter name="pendiente"  string="Pendientes"
+                        domain="[('estado','=','pendiente')]"/>
+                <filter name="sin_match"  string="Sin Match"
+                        domain="[('estado','=','sin_match')]"/>
+                <filter name="con_diferencias" string="Con Diferencias"
+                        domain="[('estado','=','con_diferencias')]"/>
+                <filter name="rechazado" string="Rechazados"
+                        domain="[('estado','=','rechazado')]"/>
+                <filter name="duplicado" string="Posibles Duplicados"
+                        domain="[('estado','=','duplicado')]"/>
+                <filter name="error"      string="Error"
+                        domain="[('estado','=','error')]"/>
+                <separator/>
+                <filter name="recibido_ok"  string="Recibido OK"
+                        domain="[('estado','=','procesado')]"/>
+                <filter name="cerrado"  string="Procesados (cerrados manualmente)"
+                        domain="[('estado','=','cerrado')]"/>
+                <separator/>
+                <filter name="whatsapp"   string="WhatsApp"
+                        domain="[('canal_origen','=','whatsapp')]"/>
+                <filter name="email"      string="Email"
+                        domain="[('canal_origen','=','email')]"/>
+                <separator/>
+                <group>
+                    <filter name="gb_company" string="Compa&#xF1;&#xED;a"
+                            context="{'group_by': 'company_id'}"
+                            groups="base.group_multi_company"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ══ Acción ════════════════════════════════════════════════════════════ -->
+    <record id="ve_comprobante_inbox_action" model="ir.actions.act_window">
+        <field name="name">Buz&#xF3;n de Comprobantes</field>
+        <field name="res_model">ve.comprobante.inbox</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_necesita_atencion': 1}</field>
+    </record>
+
+</odoo>

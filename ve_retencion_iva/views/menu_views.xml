@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ══ Raíz: DEMO Impuestos bajo Contabilidad ══════════════════════════
+         Corregido 2026-07-28: antes usaba parent_id eval="562" (ID crudo de
+         BD) — funcionaba en QA/PROD porque ahí coincide con "Accounting"
+         (accountant.menu_accounting, módulo ENTERPRISE), pero el manifest
+         de este módulo declara depends solo de account/mail/iap ("sin
+         Enterprise") — en cualquier base Community (ej. el piloto nuevo del
+         despacho), ese ID no existe y la instalación falla con FK violation
+         en ir_ui_menu. account.menu_finance ("Invoicing") es el menú raíz
+         del módulo base `account`, existe siempre, con o sin Enterprise. -->
+    <record id="ve_retencion_menu_root" model="ir.ui.menu">
+        <field name="name">DEMO Impuestos</field>
+        <field name="parent_id" ref="account.menu_finance"/>
+        <field name="sequence" eval="99"/>
+        <field name="active" eval="True"/>
+    </record>
+
+
+    <!-- ══ 0. Dashboard IVA (Operativo + Gerencial) ═══════════════════════════ -->
+    <menuitem id="DJCS_menu_dashboard_iva_operativo"
+              name="Dashboard IVA — Operativo"
+              parent="ve_retencion_menu_root"
+              action="action_open_dashboard_iva_operativo"
+              sequence="1"/>
+
+    <menuitem id="DJCS_menu_dashboard_iva_gerencial"
+              name="Dashboard IVA — Gerencial"
+              parent="ve_retencion_menu_root"
+              action="action_open_dashboard_iva_gerencial"
+              sequence="2"/>
+
+    <!-- Tendencias IVA se fusionó dentro de Dashboard IVA (sparklines en las
+         tarjetas KPI); el modelo ve.dashboard.iva.trend se eliminó por
+         completo, la lógica vive ahora en ve.dashboard.iva. -->
+
+    <!-- ══ 1. IVA Clientes ══════════════════════════════════════════════════ -->
+    <menuitem id="DJCS_menu_iva_clientes"
+              name="IVA Clientes"
+              parent="ve_retencion_menu_root"
+              sequence="10"/>
+
+    <!-- ══ 5. Utilitarios (definido aquí para que sus hijos puedan referenciarlo) ═ -->
+    <menuitem id="DJCS_menu_otros"
+              name="Utilitarios"
+              parent="ve_retencion_menu_root"
+              sequence="99"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_libro_ventas"
+              name="Libro de Ventas"
+              parent="DJCS_menu_iva_clientes"
+              action="ve_action_wizard_libro_ventas"
+              sequence="10"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_inbox"
+              name="Buz&#xF3;n de Comprobantes"
+              parent="DJCS_menu_otros"
+              action="ve_comprobante_inbox_action"
+              sequence="10"/>
+
+    <menuitem id="DJCS_menu_conecta_carga_ventas"
+              name="Cargar Libro de Ventas (Conecta)"
+              parent="DJCS_menu_otros"
+              action="ve_conecta_carga_ventas_action"
+              sequence="15"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <menuitem id="DJCS_menu_conecta_carga_compras"
+              name="Cargar Libro de Compras (Conecta)"
+              parent="DJCS_menu_otros"
+              action="ve_conecta_carga_compras_action"
+              sequence="16"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <menuitem id="DJCS_menu_declarado_mensual"
+              name="Cargar Declarado SENIAT"
+              parent="DJCS_menu_otros"
+              action="wizard_declarado_mensual_action"
+              sequence="18"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_retenciones"
+              name="Retenciones IVA Clientes"
+              parent="DJCS_menu_iva_clientes"
+              action="ve_wh_iva_action"
+              sequence="30"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_zona"
+              name="Retenciones por Zona"
+              parent="DJCS_menu_iva_clientes"
+              action="ve_wh_iva_action_zona"
+              sequence="35"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_seniat"
+              name="Retenciones SENIAT"
+              parent="DJCS_menu_iva_clientes"
+              action="ve_seniat_retencion_action"
+              sequence="40"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_seniat_periodo"
+              name="Retenciones SENIAT por Per&#xED;odo"
+              parent="DJCS_menu_iva_clientes"
+              action="ve_conciliacion_seniat_action"
+              sequence="45"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_conciliacion"
+              name="Conciliaci&#xF3;n SENIAT"
+              parent="DJCS_menu_iva_clientes"
+              action="ve_conciliacion_action"
+              sequence="50"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_concil_visual"
+              name="Visual IVA Clientes"
+              parent="DJCS_menu_iva_clientes"
+              action="ve_wh_iva_action_concil"
+              sequence="60"/>
+
+    <!-- Independiente del Dashboard IVA por ahora (ver REPOSICIONAMIENTO_MI_ERP.md /
+         SMARTIVA_FUNCIONALIDADES_POST_MI_ERP.md) — candidato a integrarse como
+         bloque del Dashboard una vez validado con la usuaria. -->
+    <menuitem id="DJCS_menu_iva_clientes_cobranza"
+              name="Cobranza vs. Comprobante"
+              parent="DJCS_menu_iva_clientes"
+              action="ve_wh_iva_action_cobranza"
+              sequence="65"/>
+
+    <record id="DJCS_action_reiniciar_demo" model="ir.actions.act_window">
+        <field name="name">Reiniciar Data Demo</field>
+        <field name="res_model">ve.reset.demo.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="DJCS_menu_iva_clientes_config"
+              name="Configuraci&#xF3;n IVA"
+              parent="DJCS_menu_otros"
+              action="DJCS_action_ve_config_iva"
+              sequence="20"
+              groups="base.group_system,ve_retencion_iva.group_ret_iva_demo"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_demo"
+              name="Reiniciar Demo"
+              parent="DJCS_menu_otros"
+              action="DJCS_action_reiniciar_demo"
+              sequence="30"
+              groups="base.group_system,ve_retencion_iva.group_ret_iva_demo"/>
+
+    <menuitem id="DJCS_menu_setup_compania"
+              name="Configuraci&#xF3;n Inicial — Compa&#xF1;&#xED;a Nueva"
+              parent="DJCS_menu_otros"
+              action="ve_wizard_setup_compania_action"
+              sequence="25"
+              groups="base.group_system"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_piloto"
+              name="Reiniciar Período Demo — Piloto Conecta"
+              parent="DJCS_menu_otros"
+              action="ve_reset_piloto_wizard_action"
+              sequence="35"
+              groups="base.group_system,ve_retencion_iva.group_ret_iva_demo"/>
+
+    <!-- ══ 2. IVA Proveedores ══════════════════════════════════════════════ -->
+    <menuitem id="DJCS_menu_iva_proveedores"
+              name="IVA Proveedores"
+              parent="ve_retencion_menu_root"
+              sequence="20"/>
+
+    <menuitem id="DJCS_menu_iva_proveedores_libro_compras"
+              name="Libro de Compras"
+              parent="DJCS_menu_iva_proveedores"
+              action="ve_action_wizard_libro_compras"
+              sequence="5"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <menuitem id="DJCS_menu_iva_proveedores_retenciones"
+              name="Retenciones IVA Proveedores"
+              parent="DJCS_menu_iva_proveedores"
+              action="ve_wh_iva_prov_action"
+              sequence="10"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <menuitem id="DJCS_menu_iva_proveedores_declaracion"
+              name="Declaraci&#xF3;n IVA Proveedores por Per&#xED;odo"
+              parent="DJCS_menu_iva_proveedores"
+              action="ve_conciliacion_prov_action"
+              sequence="15"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <!-- ══ 3. Declaración IVA ═══════════════════════════════════════════════ -->
+    <menuitem id="DJCS_menu_declaracion_iva"
+              name="Declaraci&#xF3;n IVA"
+              parent="ve_retencion_menu_root"
+              action="ve_declaracion_iva_action"
+              sequence="30"/>
+
+    <!-- ══ 4. Sanciones IVA ══════════════════════════════════════════════════ -->
+    <menuitem id="DJCS_menu_sanciones_iva"
+              name="Sanciones IVA"
+              parent="ve_retencion_menu_root"
+              sequence="40"/>
+
+    <menuitem id="DJCS_menu_sanciones_iva_registro"
+              name="Registro de Sanciones"
+              parent="DJCS_menu_sanciones_iva"
+              action="ve_sancion_iva_action"
+              sequence="10"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <menuitem id="DJCS_menu_sanciones_iva_estimador"
+              name="Estimar Riesgo SENIAT"
+              parent="DJCS_menu_sanciones_iva"
+              action="ve_action_estimacion_riesgo"
+              sequence="20"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+</odoo>

@@ -1,0 +1,440 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="report_conciliacion_template" model="ir.ui.view">
+        <field name="name">report.ve.conciliacion.periodo</field>
+        <field name="model">ve.conciliacion.periodo</field>
+        <field name="type">qweb</field>
+        <field name="arch" type="xml">
+            <t t-name="ve_retencion_iva.report_conciliacion_template">
+                <t t-call="web.html_container">
+                    <t t-foreach="docs" t-as="o">
+                        <t t-call="ve_retencion_iva.ve_iva_layout">
+                        <div class="page">
+                            <style>
+                                .rep-tit { text-align:center; font-weight:bold; font-size:10pt;
+                                           margin:0 0 6px 0; text-transform:uppercase; }
+                                table.res { width:100%; border-collapse:collapse; margin:3px 0 6px 0; }
+                                table.res td { border:1px solid #999; padding:2px 5px; font-size:8pt; }
+                                table.res td.lbl { background:#D9E1F2; font-weight:bold; width:14%; }
+                                .sec { color:#fff; font-weight:bold; font-size:8pt;
+                                       padding:2px 5px; margin:5px 0 2px 0; }
+                                .sec.verde   { background:#375623; }
+                                .sec.naranja { background:#974706; }
+                                .sec.rojo    { background:#7B0000; }
+                                .sec.azul    { background:#17375E; }
+                                table.ts { width:100%; border-collapse:collapse; margin-bottom:3px; }
+                                table.ts th { background:#D9E1F2; border:1px solid #888;
+                                              padding:1px 3px; text-align:center; font-size:7pt; }
+                                table.ts td { border:1px solid #ccc; padding:1px 3px; font-size:7.5pt; }
+                                table.ts td.r { text-align:right; }
+                                table.ts td.c { text-align:center; }
+                                .empty { font-style:italic; color:#999; font-size:7.5pt;
+                                         text-align:center; padding:4px;
+                                         border:1px solid #eee; margin-bottom:3px; }
+                                .foot { font-size:6.5pt; color:#888; border-top:1px solid #ccc;
+                                        padding-top:2px; margin-top:5px; }
+                            </style>
+
+                            <div class="rep-tit">
+                                REPORTE DE CONCILIACI&#xD3;N DE RETENCIONES IVA
+                            </div>
+
+                            <!-- Definidos aqu&#xED; (antes que el encabezado) para poder mostrar
+                                 tambi&#xE9;n el monto total de cada bucket, no solo la cantidad;
+                                 se reusan m&#xE1;s abajo en sus propias secciones de detalle. -->
+                            <t t-set="recs_odoo"
+                               t-value="o.wh_iva_ids.filtered(lambda r: r.estado_conciliacion == 'solo_odoo')"/>
+                            <t t-set="recs_seniat"
+                               t-value="o.seniat_ids.filtered(lambda s: s.estado == 'sin_match')"/>
+                            <t t-set="monto_solo_odoo" t-value="sum(recs_odoo.mapped('monto_retenido'))"/>
+                            <t t-set="monto_solo_seniat" t-value="sum(recs_seniat.mapped('monto_retenido'))"/>
+
+                            <table class="res">
+                                <tr>
+                                    <td class="lbl">Per&#xED;odo Declaraci&#xF3;n</td>
+                                    <td t-esc="o.periodo_retencion or o.periodo"/>
+                                    <td class="lbl">Contribuyente</td>
+                                    <td t-esc="o.env.company.name"/>
+                                    <td class="lbl">RIF</td>
+                                    <td t-esc="o.env.company.vat or '---'"/>
+                                </tr>
+                                <tr>
+                                    <td class="lbl">Fecha Inicio</td>
+                                    <td t-esc="str(o.fecha_inicio) if o.fecha_inicio else '---'"/>
+                                    <td class="lbl">Fecha Fin</td>
+                                    <td t-esc="str(o.fecha_fin) if o.fecha_fin else '---'"/>
+                                    <td class="lbl">Estado</td>
+                                    <td t-esc="dict(o.fields_get(['estado'])['estado']['selection']).get(o.estado, o.estado)"/>
+                                </tr>
+                                <tr>
+                                    <td class="lbl">Total SmartIVA (Bs.)</td>
+                                    <td t-esc="'{:,.2f}'.format(o.total_odoo)"/>
+                                    <td class="lbl">Total SENIAT (Bs.)</td>
+                                    <td t-esc="'{:,.2f}'.format(o.total_seniat)"/>
+                                    <td class="lbl">Diferencia (Bs.)</td>
+                                    <td t-esc="'{:,.2f}'.format(o.diferencia)"/>
+                                </tr>
+                                <tr>
+                                    <td class="lbl">Conciliadas</td>
+                                    <td t-esc="o.conciliadas"/>
+                                    <td class="lbl">Con Diferencia</td>
+                                    <td t-esc="o.con_diferencia"/>
+                                    <td class="lbl">Solo SmartIVA / Solo SENIAT</td>
+                                    <td>
+                                        <t t-esc="o.solo_odoo"/> (<t t-esc="'{:,.2f}'.format(monto_solo_odoo)"/> Bs.)
+                                        /
+                                        <t t-esc="o.solo_seniat"/> (<t t-esc="'{:,.2f}'.format(monto_solo_seniat)"/> Bs.)
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <t t-if="o.count_normalizados">
+                                <p style="font-size:0.75rem; color:#974706; background:#FFF3E0; padding:3px 6px; border:1px solid #F4C77E;">
+                                    &#x26A0; <b><t t-esc="o.count_normalizados"/> retención(es)</b> conciliada(s)
+                                    con el SENIAT solo después de normalizar el N° de Control/Factura
+                                    (ceros de relleno, guiones o prefijo distintos entre el reporte del cliente
+                                    y el Libro de Ventas) — monto afectado:
+                                    <b><t t-esc="'{:,.2f}'.format(o.monto_normalizado)"/> Bs.</b>
+                                    Ver columna "Nivel Match" en la pestaña Retenciones SENIAT para el detalle.
+                                </p>
+                            </t>
+
+                            <!-- CONCILIADAS — el código actual asigna 'listo_declarar' (con
+                                 comprobante) o 'conciliada_norec' (SENIAT OK, sin comprobante
+                                 aún); 'conciliada'/'declarado' quedan por compatibilidad con
+                                 datos antiguos. Antes este reporte solo miraba 'conciliada'
+                                 (valor legacy que el código ya no asigna) y por eso los
+                                 registros recién conciliados no aparecían en ninguna sección. -->
+                            <t t-set="recs_conciliadas"
+                               t-value="o.wh_iva_ids.filtered(lambda r: r.estado_conciliacion in ('listo_declarar', 'conciliada_norec', 'conciliada', 'declarado'))"/>
+                            <div class="sec verde">
+                                CONCILIADAS&#160;&#x2014;&#160;<t t-esc="len(recs_conciliadas)"/> registro(s)
+                            </div>
+                            <t t-if="recs_conciliadas">
+                                <table class="ts">
+                                    <thead><tr>
+                                        <th>N&#xB0; Comprobante</th>
+                                        <th>Proveedor / Cliente</th>
+                                        <th>RIF</th>
+                                        <th>Tipo Doc.</th>
+                                        <th>N&#xB0; Factura</th>
+                                        <th>N&#xB0; Control</th>
+                                        <th>Monto SmartIVA (Bs.)</th>
+                                        <th>Monto SENIAT (Bs.)</th>
+                                        <th>Diferencia (Bs.)</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        <t t-foreach="recs_conciliadas" t-as="r">
+                                            <tr>
+                                                <td t-esc="r.name or '---'"/>
+                                                <td t-esc="r.partner_id.name if r.partner_id else '---'"/>
+                                                <td t-esc="r.rif or '---'"/>
+                                                <td class="c" t-esc="r.tipo_documento or '---'"/>
+                                                <td class="c" t-esc="r.invoice_id.name if r.invoice_id else (r.nro_documento or '---')"/>
+                                                <td class="c" t-esc="r.nro_control or '---'"/>
+                                                <td class="r" t-esc="'{:,.2f}'.format(r.monto_retenido)"/>
+                                                <td class="r" t-esc="'{:,.2f}'.format(r.monto_seniat)"/>
+                                                <td class="r" t-esc="'{:,.2f}'.format(r.monto_retenido - r.monto_seniat)"/>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                            </t>
+                            <t t-else=""><div class="empty">&#x2014; Sin retenciones conciliadas &#x2014;</div></t>
+
+                            <!-- CON DIFERENCIA -->
+                            <t t-set="recs_dif"
+                               t-value="o.wh_iva_ids.filtered(lambda r: r.estado_conciliacion == 'diferencia')"/>
+                            <div class="sec naranja">
+                                CON DIFERENCIA DE MONTO&#160;&#x2014;&#160;<t t-esc="len(recs_dif)"/> registro(s)
+                            </div>
+                            <t t-if="recs_dif">
+                                <table class="ts">
+                                    <thead><tr>
+                                        <th>N&#xB0; Comprobante</th>
+                                        <th>Proveedor / Cliente</th>
+                                        <th>RIF</th>
+                                        <th>Tipo Doc.</th>
+                                        <th>N&#xB0; Factura</th>
+                                        <th>N&#xB0; Control</th>
+                                        <th>Monto SmartIVA (Bs.)</th>
+                                        <th>Monto SENIAT (Bs.)</th>
+                                        <th>Diferencia (Bs.)</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        <t t-foreach="recs_dif" t-as="r">
+                                            <tr>
+                                                <td t-esc="r.name or '---'"/>
+                                                <td t-esc="r.partner_id.name if r.partner_id else '---'"/>
+                                                <td t-esc="r.rif or '---'"/>
+                                                <td class="c" t-esc="r.tipo_documento or '---'"/>
+                                                <td class="c" t-esc="r.invoice_id.name if r.invoice_id else (r.nro_documento or '---')"/>
+                                                <td class="c" t-esc="r.nro_control or '---'"/>
+                                                <td class="r" t-esc="'{:,.2f}'.format(r.monto_retenido)"/>
+                                                <td class="r" t-esc="'{:,.2f}'.format(r.monto_seniat)"/>
+                                                <td class="r" t-esc="'{:,.2f}'.format(r.monto_retenido - r.monto_seniat)"/>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                            </t>
+                            <t t-else=""><div class="empty">&#x2014; Sin retenciones con diferencia &#x2014;</div></t>
+
+                            <!-- SOLO EN SMARTIVA (recs_odoo definido arriba, junto al encabezado) -->
+                            <div class="sec rojo">
+                                SOLO EN SMARTIVA (SIN MATCH EN SENIAT)&#160;&#x2014;&#160;<t t-esc="len(recs_odoo)"/> registro(s)
+                                &#160;&#x2014;&#160;<t t-esc="'{:,.2f}'.format(monto_solo_odoo)"/> Bs.
+                            </div>
+                            <t t-if="recs_odoo">
+                                <table class="ts">
+                                    <thead><tr>
+                                        <th>N&#xB0; Comprobante</th>
+                                        <th>Proveedor / Cliente</th>
+                                        <th>RIF</th>
+                                        <th>Tipo Doc.</th>
+                                        <th>N&#xB0; Factura</th>
+                                        <th>N&#xB0; Control</th>
+                                        <th>Monto SmartIVA (Bs.)</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        <t t-foreach="recs_odoo" t-as="r">
+                                            <tr>
+                                                <td t-esc="r.name or '---'"/>
+                                                <td t-esc="r.partner_id.name if r.partner_id else '---'"/>
+                                                <td t-esc="r.rif or '---'"/>
+                                                <td class="c" t-esc="r.tipo_documento or '---'"/>
+                                                <td class="c" t-esc="r.invoice_id.name if r.invoice_id else (r.nro_documento or '---')"/>
+                                                <td class="c" t-esc="r.nro_control or '---'"/>
+                                                <td class="r" t-esc="'{:,.2f}'.format(r.monto_retenido)"/>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                            </t>
+                            <t t-else=""><div class="empty">&#x2014; Sin retenciones solo en SmartIVA &#x2014;</div></t>
+
+                            <!-- SOLO EN SENIAT (recs_seniat definido arriba, junto al encabezado) -->
+                            <div class="sec azul">
+                                SOLO EN SENIAT (SIN MATCH EN SMARTIVA)&#160;&#x2014;&#160;<t t-esc="len(recs_seniat)"/> registro(s)
+                                &#160;&#x2014;&#160;<t t-esc="'{:,.2f}'.format(monto_solo_seniat)"/> Bs.
+                            </div>
+                            <t t-if="recs_seniat">
+                                <table class="ts">
+                                    <thead><tr>
+                                        <th>N&#xB0; Comprobante</th>
+                                        <th>Nombre Agente</th>
+                                        <th>RIF Agente</th>
+                                        <th>Tipo Doc.</th>
+                                        <th>N&#xB0; Documento</th>
+                                        <th>N&#xB0; Control</th>
+                                        <th>Monto SENIAT (Bs.)</th>
+                                    </tr></thead>
+                                    <tbody>
+                                        <t t-foreach="recs_seniat" t-as="s">
+                                            <tr>
+                                                <td t-esc="s.name or '---'"/>
+                                                <td t-esc="s.nombre_agente or '---'"/>
+                                                <td t-esc="s.rif_agente or '---'"/>
+                                                <td class="c" t-esc="s.tipo_documento or '---'"/>
+                                                <td class="c" t-esc="s.nro_documento or '---'"/>
+                                                <td class="c" t-esc="s.nro_control or '---'"/>
+                                                <td class="r" t-esc="'{:,.2f}'.format(s.monto_retenido)"/>
+                                            </tr>
+                                        </t>
+                                    </tbody>
+                                </table>
+                            </t>
+                            <t t-else=""><div class="empty">&#x2014; Sin retenciones solo en SENIAT &#x2014;</div></t>
+
+                            <div class="foot">
+                                Conciliaci&#xF3;n IVA &#xB7; <t t-esc="o.env.company.name"/> &#xB7;
+                                <t t-esc="o.periodo_retencion or o.periodo"/>
+                            </div>
+
+                        </div><!-- /page -->
+                        </t><!-- /ve_iva_layout -->
+                    </t><!-- /foreach -->
+                </t><!-- /html_container -->
+            </t>
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Reporte Declaración — reflejo de la pestaña Conciliación Visual
+    ══════════════════════════════════════════════════════════════ -->
+    <record id="report_declaracion_template" model="ir.ui.view">
+        <field name="name">report.ve.declaracion.conciliacion</field>
+        <field name="model">ve.conciliacion.periodo</field>
+        <field name="type">qweb</field>
+        <field name="arch" type="xml">
+            <t t-name="ve_retencion_iva.report_declaracion_template">
+                <t t-call="web.html_container">
+                    <t t-foreach="docs" t-as="o">
+                        <t t-call="ve_retencion_iva.ve_iva_layout">
+                        <div class="page">
+                            <style>
+                                .rep-tit { text-align:center; font-weight:bold; font-size:10pt; margin:0 0 6px 0; }
+                                table.res { width:100%; border-collapse:collapse; margin:3px 0 6px 0; }
+                                table.res td { border:1px solid #999; padding:2px 5px; font-size:8pt; }
+                                table.res td.lbl { background:#D9E1F2; font-weight:bold; width:14%; }
+                                table.ts { width:100%; border-collapse:collapse; margin-bottom:6px; table-layout:fixed; }
+                                table.ts th { background:#4472C4; color:#fff; border:0.3pt solid #ccc;
+                                              padding:2px 3px; text-align:center; font-size:6.5pt; font-weight:bold; }
+                                table.ts td { border:1px solid #ddd; padding:2px 3px; font-size:6.5pt; }
+                                table.ts td.r  { text-align:right; }
+                                table.ts td.c  { text-align:center; }
+                                .badge-ok   { background:#d4edda; color:#155724; border-radius:3px; padding:1px 3px; }
+                                .badge-norec{ background:#fff3cd; color:#856404; border-radius:3px; padding:1px 3px; }
+                                .badge-dif  { background:#fff3cd; color:#856404; border-radius:3px; padding:1px 3px; }
+                                .badge-no   { background:#f8d7da; color:#721c24; border-radius:3px; padding:1px 3px; }
+                                .badge-grey { background:#e2e3e5; color:#383d41; border-radius:3px; padding:1px 3px; }
+                                .foot { font-size:6pt; color:#888; border-top:1px solid #ccc; padding-top:3px; margin-top:6px; }
+                                .tot { background:#D6E4F0; font-weight:bold; }
+                            </style>
+
+                            <div class="rep-tit">REPORTE DE DECLARACI&#xD3;N IVA — CONCILIACI&#xD3;N VISUAL</div>
+
+                            <table class="res">
+                                <tr>
+                                    <td class="lbl">Per&#xED;odo</td>
+                                    <td t-esc="o.periodo_retencion or o.periodo"/>
+                                    <td class="lbl">Empresa</td>
+                                    <td t-esc="o.env.company.name"/>
+                                    <td class="lbl">RIF</td>
+                                    <td t-esc="o.env.company.vat or '---'"/>
+                                </tr>
+                                <tr>
+                                    <td class="lbl">Fecha Inicio</td>
+                                    <td t-esc="str(o.fecha_inicio) if o.fecha_inicio else '---'"/>
+                                    <td class="lbl">Fecha Fin</td>
+                                    <td t-esc="str(o.fecha_fin) if o.fecha_fin else '---'"/>
+                                    <td class="lbl">Campo 66 (Bs.)</td>
+                                    <td><b t-esc="'{:,.2f}'.format(o.campo_66)"/></td>
+                                </tr>
+                                <tr>
+                                    <td class="lbl">Total Esperados/Recibidos</td>
+                                    <td t-esc="'{:,.2f}'.format(o.total_odoo)"/>
+                                    <td class="lbl">Total Recibidos</td>
+                                    <td t-esc="'{:,.2f}'.format(o.total_recibidos)"/>
+                                    <td class="lbl">Total en SENIAT</td>
+                                    <td t-esc="'{:,.2f}'.format(o.total_seniat)"/>
+                                </tr>
+                                <tr>
+                                    <td class="lbl">Dif. Recibido-SENIAT</td>
+                                    <td t-esc="'{:,.2f}'.format(o.diferencia)"/>
+                                    <td class="lbl">Dif. Esperado/Recibido-SENIAT</td>
+                                    <td t-esc="'{:,.2f}'.format(o.diferencia_esperado_seniat)"/>
+                                    <td class="lbl">Campo 66 (Bs.)</td>
+                                    <td><b t-esc="'{:,.2f}'.format(o.campo_66)"/></td>
+                                </tr>
+                            </table>
+
+                            <t t-set="activos" t-value="o.wh_iva_ids.filtered(lambda r: r.state != 'anulado').sorted(key=lambda r: r.monto_retenido, reverse=True)"/>
+
+                            <table class="ts">
+                                <thead><tr>
+                                    <th style="width:5%">Fecha</th>
+                                    <th style="width:20%">Cliente</th>
+                                    <th style="width:6%">RIF</th>
+                                    <th style="width:9%">Factura</th>
+                                    <th style="width:5%">N&#xB0; Control</th>
+                                    <th style="width:8%">N&#xB0; Comprobante</th>
+                                    <th style="width:8%">Monto Factura</th>
+                                    <th style="width:8%">Monto Esperado</th>
+                                    <th style="width:8%">Monto Cliente</th>
+                                    <th style="width:7%">Monto SENIAT</th>
+                                    <th style="width:9%">Estado Conc.</th>
+                                    <th style="width:7%">C.66</th>
+                                </tr></thead>
+                                <tbody>
+                                    <t t-set="tot_factura"  t-value="0"/>
+                                    <t t-set="tot_esperado" t-value="0"/>
+                                    <t t-set="tot_cliente"  t-value="0"/>
+                                    <t t-set="tot_seniat"   t-value="0"/>
+                                    <t t-set="tot_c66"      t-value="0"/>
+                                    <t t-foreach="activos" t-as="r">
+                                        <tr t-attf-style="#{'' if r.incluir_declaracion else 'color:#999;'}">
+                                            <td class="c" t-esc="str(r.fecha) if r.fecha else '---'"/>
+                                            <td t-esc="r.partner_id.name if r.partner_id else '---'"/>
+                                            <td class="c" t-esc="r.rif or '---'"/>
+                                            <td class="c" t-esc="r.invoice_id.name if r.invoice_id else '---'"/>
+                                            <td class="c" t-esc="r.nro_control or '---'"/>
+                                            <td class="c" t-esc="r.name or '---'"/>
+                                            <td class="r" t-esc="'{:,.2f}'.format(r.invoice_id.amount_total if r.invoice_id else 0)"/>
+                                            <td class="r" t-esc="'{:,.2f}'.format(r.monto_retenido)"/>
+                                            <td class="r" t-esc="'{:,.2f}'.format(r.monto_recibido)"/>
+                                            <td class="r" t-esc="'{:,.2f}'.format(r.monto_seniat)"/>
+                                            <td class="c">
+                                                <t t-if="r.estado_conciliacion == 'conciliada'">
+                                                    <span class="badge-ok">Conciliada</span>
+                                                </t>
+                                                <t t-elif="r.estado_conciliacion == 'conciliada_norec'">
+                                                    <span class="badge-norec">Concil. NoRec</span>
+                                                </t>
+                                                <t t-elif="r.estado_conciliacion == 'diferencia'">
+                                                    <span class="badge-dif">Diferencia</span>
+                                                </t>
+                                                <t t-elif="r.estado_conciliacion == 'solo_odoo'">
+                                                    <span class="badge-no">Solo Odoo</span>
+                                                </t>
+                                                <t t-else="">
+                                                    <span class="badge-grey"><t t-esc="r.estado_conciliacion"/></span>
+                                                </t>
+                                            </td>
+                                            <td class="c">
+                                                <t t-if="r.incluir_declaracion">
+                                                    &#x2713; <t t-esc="'{:,.2f}'.format(r.monto_c66)"/>
+                                                </t>
+                                                <t t-else="">&#x2014;</t>
+                                            </td>
+                                        </tr>
+                                        <t t-set="tot_factura"  t-value="tot_factura  + (r.invoice_id.amount_total if r.invoice_id else 0)"/>
+                                        <t t-set="tot_esperado" t-value="tot_esperado + r.monto_retenido"/>
+                                        <t t-set="tot_cliente"  t-value="tot_cliente  + r.monto_recibido"/>
+                                        <t t-set="tot_seniat"   t-value="tot_seniat   + r.monto_seniat"/>
+                                        <t t-set="tot_c66"      t-value="tot_c66      + r.monto_c66"/>
+                                    </t>
+                                    <tr class="tot">
+                                        <td colspan="6" class="r">TOTALES</td>
+                                        <td class="r" t-esc="'{:,.2f}'.format(tot_factura)"/>
+                                        <td class="r" t-esc="'{:,.2f}'.format(tot_esperado)"/>
+                                        <td class="r" t-esc="'{:,.2f}'.format(tot_cliente)"/>
+                                        <td class="r" t-esc="'{:,.2f}'.format(tot_seniat)"/>
+                                        <td></td>
+                                        <td class="r" t-esc="'{:,.2f}'.format(tot_c66)"/>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <div class="foot">
+                                Declaraci&#xF3;n IVA &#xB7; <t t-esc="o.env.company.name"/> &#xB7;
+                                Per&#xED;odo: <t t-esc="o.periodo_retencion or o.periodo"/>
+                            </div>
+                        </div>
+                        </t>
+                    </t>
+                </t>
+            </t>
+        </field>
+    </record>
+
+    <record id="action_report_declaracion" model="ir.actions.report">
+        <field name="name">Reporte Declaraci&#xF3;n</field>
+        <field name="model">ve.conciliacion.periodo</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">ve_retencion_iva.report_declaracion_template</field>
+        <field name="report_file">ve_retencion_iva.report_declaracion_template</field>
+        <field name="paperformat_id" ref="paperformat_iva_landscape"/>
+    </record>
+
+    <record id="action_report_conciliacion" model="ir.actions.report">
+        <field name="name">Reporte de Conciliaci&#xF3;n</field>
+        <field name="model">ve.conciliacion.periodo</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">ve_retencion_iva.report_conciliacion_template</field>
+        <field name="report_file">ve_retencion_iva.report_conciliacion_template</field>
+        <field name="paperformat_id" ref="paperformat_iva_landscape"/>
+    </record>
+
+</odoo>

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!-- company_id=False a propósito en las 3 secuencias: sin esto, Odoo
+         las crea scoped a la compañía activa al momento de instalar el
+         módulo (típicamente la primera/única que existe), y
+         next_by_code() ya no las encuentra desde OTRA compañía (ej. una
+         compañía piloto/cliente nueva de un despacho contable) — el
+         código cae al fallback "RET-IVA-C/YYYY/????" en vez de numerar
+         de verdad. Detectado 2026-07-21 con la compañía PILOTO. -->
+    <record id="seq_ve_conciliacion_periodo" model="ir.sequence">
+        <field name="name">Declaración IVA Clientes — Períodos</field>
+        <field name="code">ve.conciliacion.periodo</field>
+        <field name="prefix">DECL-IVA/%(year)s/</field>
+        <field name="padding">2</field>
+        <field name="number_next">1</field>
+        <field name="number_increment">1</field>
+        <field name="use_date_range">False</field>
+        <field name="company_id" eval="False"/>
+    </record>
+
+    <record id="seq_ve_wh_iva" model="ir.sequence">
+        <field name="name">Retenciones IVA Clientes</field>
+        <field name="code">ve.wh.iva</field>
+        <field name="prefix">RET-IVA-C/%(year)s/</field>
+        <field name="padding">4</field>
+        <field name="number_next">1</field>
+        <field name="number_increment">1</field>
+        <field name="use_date_range">False</field>
+        <field name="company_id" eval="False"/>
+    </record>
+
+    <record id="seq_ve_wh_iva_prov" model="ir.sequence">
+        <field name="name">Retenciones IVA Proveedores</field>
+        <field name="code">ve.wh.iva.prov</field>
+        <field name="prefix">RET-IVA-P/%(year)s/</field>
+        <field name="padding">4</field>
+        <field name="number_next">1</field>
+        <field name="number_increment">1</field>
+        <field name="use_date_range">False</field>
+        <field name="company_id" eval="False"/>
+    </record>
+
+    <record id="seq_ve_conecta_carga_ventas" model="ir.sequence">
+        <field name="name">SmartIVA Conecta — Cargas Libro de Ventas</field>
+        <field name="code">ve.conecta.carga.ventas</field>
+        <field name="prefix">CARGA-VTA/%(year)s/</field>
+        <field name="padding">3</field>
+        <field name="number_next">1</field>
+        <field name="number_increment">1</field>
+        <field name="use_date_range">False</field>
+        <field name="company_id" eval="False"/>
+    </record>
+
+    <record id="seq_ve_conecta_carga_compras" model="ir.sequence">
+        <field name="name">SmartIVA Conecta — Cargas Libro de Compras</field>
+        <field name="code">ve.conecta.carga.compras</field>
+        <field name="prefix">CARGA-CMP/%(year)s/</field>
+        <field name="padding">3</field>
+        <field name="number_next">1</field>
+        <field name="number_increment">1</field>
+        <field name="use_date_range">False</field>
+        <field name="company_id" eval="False"/>
+    </record>
+
+    <record id="ir_cron_recordatorios_vencimiento" model="ir.cron">
+        <field name="name">Retenciones IVA: Recordatorios de Vencimiento</field>
+        <field name="model_id" ref="model_ve_wh_iva"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_recordatorios_vencimiento()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+        <field name="user_id" ref="base.user_root"/>
+    </record>
+
+    <record id="ir_cron_actualizar_estado_vencido" model="ir.cron">
+        <field name="name">Retenciones IVA: Sincronizar Estado Vencido</field>
+        <field name="model_id" ref="model_ve_wh_iva"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_actualizar_estado_vencido()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+        <field name="user_id" ref="base.user_root"/>
+    </record>
+
+</odoo>

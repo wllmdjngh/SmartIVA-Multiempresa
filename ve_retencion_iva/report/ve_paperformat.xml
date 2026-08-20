@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Layout base para todos los reportes IVA Venezuela.
+         Carga web.report_assets_pdf (fuentes para PDF) y muestra sólo
+         nombre + RIF de la empresa, sin dirección ni teléfono. -->
+    <template id="ve_iva_layout" name="IVA Venezuela — Layout base">
+        <t t-call-assets="web.report_assets_pdf" t-js="false"/>
+        <div class="article">
+            <div style="width:100%; overflow:hidden; border-bottom:1px solid #ccc;
+                        padding-bottom:4px; margin-bottom:14px;">
+                <img t-if="env.company.logo"
+                     t-att-src="'data:image/png;base64,' + env.company.logo.decode('ascii')"
+                     style="float:left; max-height:65px; max-width:180px; object-fit:contain;"/>
+                <div style="float:right; text-align:right; font-size:7.5pt; color:#555;
+                            line-height:1.5; white-space:nowrap; max-width:65%;">
+                    <strong t-esc="env.company.name"/>
+                    <t t-if="env.company.vat">
+                        &#160;&#8211;&#160;RIF:&#160;<t t-esc="env.company.vat"/>
+                    </t>
+                </div>
+            </div>
+            <t t-out="0"/>
+        </div>
+    </template>
+
+    <record id="paperformat_iva_portrait" model="report.paperformat">
+        <field name="name">A4 Portrait IVA Venezuela</field>
+        <field name="default">False</field>
+        <field name="format">A4</field>
+        <field name="page_height">0</field>
+        <field name="page_width">0</field>
+        <field name="orientation">Portrait</field>
+        <field name="margin_top">5</field>
+        <field name="margin_bottom">5</field>
+        <field name="margin_left">8</field>
+        <field name="margin_right">8</field>
+        <field name="header_line">False</field>
+        <field name="header_spacing">3</field>
+    </record>
+
+    <record id="paperformat_iva_landscape" model="report.paperformat">
+        <field name="name">A4 Landscape IVA Venezuela</field>
+        <field name="default">False</field>
+        <field name="format">A4</field>
+        <field name="page_height">0</field>
+        <field name="page_width">0</field>
+        <field name="orientation">Landscape</field>
+        <field name="margin_top">14</field>
+        <field name="margin_bottom">5</field>
+        <field name="margin_left">3</field>
+        <field name="margin_right">3</field>
+        <field name="header_line">False</field>
+        <field name="header_spacing">3</field>
+    </record>
+
+</odoo>
