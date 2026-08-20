@@ -1161,6 +1161,24 @@ class VeConectaCargaVentas(models.Model):
                         linea.invoice_id = nc.id
                         creadas += 1
                         n_notas_credito += 1
+                        # Bug real encontrado 2026-08-20: esta rama nunca
+                        # revisaba si el hook nativo generó (o no) una
+                        # ve.wh.iva para la Nota de Crédito -- sin esto, una
+                        # NC sin retención quedaba invisible tanto en
+                        # wh_tracking como en sin_retencion_lineas, y el
+                        # "TOTAL Sin Retención" del Resumen (creadas -
+                        # retenciones_creadas) terminaba más alto que la suma
+                        # real de las 2 filas del desglose por motivo.
+                        wh_creada_nc = WhIva.search([('invoice_id', '=', nc.id)], limit=1)
+                        if wh_creada_nc:
+                            wh_tracking.append((wh_creada_nc.id, linea.monto_retenido))
+                            wh_creada_nc.write({
+                                'monto_retenido_archivo': linea.monto_retenido,
+                                'monto_iva_archivo': linea.monto_iva,
+                                'viene_de_libro_ventas': True,
+                            })
+                        else:
+                            sin_retencion_lineas.append(linea)
                     except Exception as exc:
                         errores.append(f'Fila {linea.fila} (Nota de Crédito): {exc}')
                         # Si el posteo falla (ej. choque de nombre con OTRA
@@ -1529,7 +1547,12 @@ class VeConectaCargaVentas(models.Model):
         for linea in self.linea_ids:
             if not linea.invoice_id:
                 continue
-            base_archivo_tot += linea.base_16 + linea.base_8
+            # Bug real encontrado 2026-08-20: omitía base_exento (ventas
+            # internas no gravadas) -- linea.invoice_id.amount_untaxed SI la
+            # incluye (suma TODAS las líneas de la factura, gravadas o no),
+            # así que sin esto "Diferencia" salía falsa cada vez que el
+            # archivo traía esa columna con datos.
+            base_archivo_tot += linea.base_16 + linea.base_8 + linea.base_exento
             base_odoo_tot += linea.invoice_id.amount_untaxed
             iva_archivo_tot += linea.monto_iva
             iva_odoo_tot += linea.invoice_id.amount_tax
@@ -1581,13 +1604,6 @@ class VeConectaCargaVentas(models.Model):
         con_control_n = sin_control_n = 0
         con_control_feed = con_control_odoo = 0.0
         sin_control_feed = sin_control_odoo = 0.0
-        # Base para "Retenciones Estimadas" -- mismo cálculo que el
-        # Dashboard (ve_dashboard_iva.py::_serie_valor_estimado): 75% del
-        # IVA causado (16%+8%) de TODAS las retenciones generadas, sin
-        # importar su % real. Pedido explícito 2026-08-11: agregar al
-        # Resumen la comparación Estimadas vs. Real que antes solo vivía
-        # en el Excel de auditoría ad-hoc.
-        suma_iva_total_generadas = 0.0
 
         if wh_tracking:
             whs_finales = {w.id: w for w in WhIva.browse([t[0] for t in wh_tracking])}
@@ -1597,7 +1613,6 @@ class VeConectaCargaVentas(models.Model):
                     por_estado_recepcion.get(wh.estado_recepcion, 0) + 1)
                 monto_por_estado_recepcion[wh.estado_recepcion] = (
                     monto_por_estado_recepcion.get(wh.estado_recepcion, 0.0) + wh.monto_retenido)
-                suma_iva_total_generadas += wh.monto_iva + wh.monto_iva_red
                 if wh.nro_control:
                     con_control_n += 1
                     con_control_feed += monto_feed
@@ -1671,7 +1686,11 @@ class VeConectaCargaVentas(models.Model):
             f'<th {th}>Diferencia</th></tr>'
             + _fila('Filas leídas', _n(len(self.linea_ids)))
             + _fila('Facturas creadas', _n(creadas))
-            + _fila('Facturas rechazadas', _n(len(self.linea_ids) - creadas))
+            + _fila('Facturas rechazadas (ver "Filas con error" más abajo si hubo error al '
+                    'postear; si quedaron bloqueadas sin intentar, ver "Filas bloqueadas '
+                    'pendientes" arriba; si fueron un par Registro+Anulación omitido, ver esa '
+                    'fila en la tabla de Detalle)',
+                    _n(len(self.linea_ids) - creadas))
             + _fila('Facturas sin Retención generada en SmartIVA (ver desglose más abajo)',
                     _n(creadas - retenciones_creadas))
             + _fila('Facturas con monto retenido y Retención creada como Confirmado',
@@ -1736,7 +1755,17 @@ class VeConectaCargaVentas(models.Model):
             else:
                 sin_ret_agente_false += 1
                 base_agente_false += base
-        sin_retencion = creadas - retenciones_creadas
+        # "TOTAL Sin Retención" se calcula de la MISMA lista que arma las 2
+        # filas del desglose (sin_retencion_lineas), no por resta aparte
+        # (creadas - retenciones_creadas) -- bug real encontrado 2026-08-20:
+        # esa resta podía dar un número mayor a sin_ret_agente_true +
+        # sin_ret_agente_false si algún camino de creación (ej. Notas de
+        # Crédito) incrementaba `creadas` sin pasar por sin_retencion_lineas
+        # (ya corregido arriba), dejando el TOTAL sin cuadrar con las filas
+        # que sí se ven. Con esto es correcto por construcción; el CHEQUEO de
+        # abajo sigue sirviendo para detectar si aparece un camino nuevo que
+        # tampoco pase por acá.
+        sin_retencion = len(sin_retencion_lineas)
         suma_cuadra = (retenciones_creadas + sin_retencion) == creadas
         tabla_sin_retencion = (
             f'<table style="border-collapse:collapse; font-size:0.85rem;">'
@@ -1758,34 +1787,10 @@ class VeConectaCargaVentas(models.Model):
               f'— debe cuadrar con Facturas creadas ({_n(creadas)})</p>'
         )
 
-        # Estimadas vs. Real — pedido explícito 2026-08-11. "Estimadas" es
-        # la misma proyección fija al 75% que usa el Dashboard
-        # (_serie_valor_estimado); NUNCA debe coincidir con lo realmente
-        # generado si hay retenciones sin N° de Control (esas se calculan
-        # al 100%, no al 75%) -- se desglosa cuánto de la diferencia
-        # explica exactamente esa causa, para no dejarlo como un misterio.
-        estimadas_generadas = round(suma_iva_total_generadas * 0.75, 2)
-        real_generadas = monto_odoo_confirmadas + monto_odoo_pendientes
-        dif_estimadas = round(real_generadas - estimadas_generadas, 2)
-        excedente_sin_control = round(sin_control_odoo * 0.25, 2)
-        cubre_pct = (excedente_sin_control / dif_estimadas * 100) if dif_estimadas else 0
-        tabla_estimadas_vs_real = (
-            f'<table style="border-collapse:collapse; font-size:0.85rem;">'
-            f'<tr><th {th}>Concepto</th><th {th}>Monto (Bs)</th></tr>'
-            f'<tr><td {td}>Retenciones Estimadas (75% parejo del IVA causado)</td>'
-            f'<td {tdr}>{_m(estimadas_generadas)}</td></tr>'
-            f'<tr><td {td}>Retenido Real (% real de cada registro)</td>'
-            f'<td {tdr}>{_m(real_generadas)}</td></tr>'
-            f'<tr style="font-weight:700; border-top:2px solid #999;">'
-            f'<td {td}>Diferencia (Real − Estimadas)</td>'
-            f'<td {tdr}><span style="color:{"#dc3545" if abs(dif_estimadas) > 0.01 else "#198754"};">'
-            f'{_m(dif_estimadas)}</span></td></tr>'
-            f'</table>'
-            f'<p style="font-size:0.75rem; color:#666;">El excedente por las {_n(sin_control_n)} '
-            f'retenciones sin N° de Control ({_m(excedente_sin_control)}) explica {cubre_pct:.1f}% '
-            f'de esta diferencia. No es un error de cálculo — es el efecto esperado de aplicar 100% '
-            f'en vez de 75% en esas filas.</p>'
-        )
+        # Tabla "Estimadas vs. Retenido Real" ELIMINADA (pedido explícito
+        # 2026-08-20) -- confundía más de lo que aclaraba en la demo. La
+        # comparación real Excel/Odoo ya vive en "Montos: Archivo vs. Odoo"
+        # (arriba) y "Retenciones SIN N° de Control" (tabla Consistencia).
 
         # Montos: Archivo vs. Odoo — pedido explícito 2026-08-06, 2 filas
         # (Archivo/Odoo) + 1 de Diferencia, mismas 3 columnas que ya usa la
@@ -1909,7 +1914,6 @@ class VeConectaCargaVentas(models.Model):
             f'<b>— Retenciones Generadas — Estado Actual —</b><br/>{tabla_estados}<br/>'
             f'<b>— Facturas SIN Retención generada — Desglose por Motivo —</b><br/>{tabla_sin_retencion}<br/>'
             f'<b>— Montos: Archivo vs. Odoo —</b><br/>{tabla_montos}<br/>'
-            f'<b>— Estimadas vs. Retenido Real —</b><br/>{tabla_estimadas_vs_real}<br/>'
             + (f'<b>— Consistencia por Zona —</b><br/>{tabla_zona}<br/>' if hay_zonas else '')
             + f'<b>— Detalle —</b><br/>{tabla_detalle}'
         )
