@@ -21,6 +21,9 @@
                        string="N&#xB0; Control"
                        placeholder="00-0000000"
                        invisible="move_type not in ('out_invoice','out_refund')"/>
+                <field name="nro_factura"
+                       string="N&#xB0; Factura"
+                       invisible="move_type not in ('out_invoice','out_refund')"/>
             </xpath>
 
             <!-- Pesta&#xF1;as de retenciones IVA -->
@@ -78,6 +81,7 @@
         <field name="arch" type="xml">
             <field name="name" position="after">
                 <field name="nro_control" string="N&#xB0; Control" optional="show"/>
+                <field name="nro_factura" string="N&#xB0; Factura" optional="hide"/>
             </field>
         </field>
     </record>

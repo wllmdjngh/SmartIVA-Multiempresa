@@ -1159,6 +1159,21 @@ class VeConciliacionPeriodo(models.Model):
         by_ctrl = {}
         by_factura = {}
         seniat_norm_factura = {}
+        # Bug real confirmado 2026-08-22 (Vencement, RIF J-00000453-6/
+        # FAPECA): by_ctrl/by_factura se arman UNA sola vez antes del loop
+        # y nunca se actualizaban a medida que cada wh_iva reclamaba un
+        # candidato -- si SENIAT reutiliza un N°Control entre 2
+        # comprobantes reales distintos del mismo agente, 2 wh_iva
+        # DISTINTOS podían encontrar el mismo ve.seniat.retencion como
+        # candidato (uno por N1/Control, otro por N2/Factura) y el que se
+        # procesaba último se lo robaba al otro en silencio -- sin pasar
+        # por la salvaguarda de "más de 1 candidato" (esa solo mira
+        # ambigüedad DENTRO de la resolución de un mismo wh, no conflictos
+        # ENTRE wh distintos). seniat_ya_asignado trackea qué
+        # ve.seniat.retencion ya se le asignó a un wh en ESTA corrida, para
+        # excluirlo de los candidatos de cualquier wh que se procese
+        # después.
+        seniat_ya_asignado = set()
         for s in seniat_universo:
             s_rif = norm_rif(s.rif_agente)
             s_ctrl = norm_ctrl(s.nro_control)
@@ -1193,7 +1208,10 @@ class VeConciliacionPeriodo(models.Model):
             normalizado = False
 
             if wh_ctrl_norm:
-                candidatos_list = by_ctrl.get((wh_rif, wh_ctrl_norm), [])
+                candidatos_list = [
+                    s for s in by_ctrl.get((wh_rif, wh_ctrl_norm), [])
+                    if s.id not in seniat_ya_asignado
+                ]
                 # Desambiguar por N° Factura cuando RIF+Control normalizados
                 # encuentran MÁS DE UN candidato -- bug real confirmado
                 # 2026-08-05 (Cementos): SENIAT a veces usa un N°Control
@@ -1213,7 +1231,10 @@ class VeConciliacionPeriodo(models.Model):
                         (s.nro_control or '').strip().upper() == wh_ctrl_raw for s in candidatos_list)
 
             if not seniat_match and wh_factura_norm:
-                candidatos_list = by_factura.get((wh_rif, wh_factura_norm), [])
+                candidatos_list = [
+                    s for s in by_factura.get((wh_rif, wh_factura_norm), [])
+                    if s.id not in seniat_ya_asignado
+                ]
                 if candidatos_list:
                     seniat_match = SeniatEmpty.browse([s.id for s in candidatos_list])
                     nivel = 'n2'
@@ -1245,6 +1266,7 @@ class VeConciliacionPeriodo(models.Model):
                 # contra.
             else:
                 seniat = seniat_match[0]
+                seniat_ya_asignado.add(seniat.id)
                 seniat.wh_iva_id = wh.id
                 seniat.nivel_match = nivel
                 wh.nivel_match = nivel

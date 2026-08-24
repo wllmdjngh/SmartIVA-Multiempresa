@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="wizard_reporte_ejecutivo_view_form" model="ir.ui.view">
+        <field name="name">ve.reporte.ejecutivo.wizard.form</field>
+        <field name="model">ve.reporte.ejecutivo.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Reporte Ejecutivo SmartIVA">
+                <div class="alert alert-info" role="alert">
+                    Genera "SmartIVA Executive Summary" con 4 pestañas: "Result" (espejo
+                    del Dashboard -- Cantidad/Monto por Mes, gráfico de barras, brecha
+                    SENIAT sin match e IOC/TAC/BDS), "Monthly Totals" (Excel vs SmartIVA
+                    vs SENIAT), "Declared Withholdings" y "Consolidated" (universo
+                    completo del Libro de Ventas cargado). Cubre TODOS los períodos ya
+                    cargados de la compañía -- no pide rango de fechas. No hace falta
+                    volver a subir ningún archivo -- usa los datos ya cargados en Odoo.
+                </div>
+                <group>
+                    <field name="company_id" groups="base.group_multi_company"/>
+                </group>
+                <footer>
+                    <button name="action_generar" string="Generar Excel" type="object"
+                            class="btn-primary"/>
+                    <button string="Cancelar" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="wizard_reporte_ejecutivo_action" model="ir.actions.act_window">
+        <field name="name">Reporte Ejecutivo SmartIVA</field>
+        <field name="res_model">ve.reporte.ejecutivo.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

@@ -38,6 +38,7 @@
                 <field name="zona" string="Zona/Planta" optional="show"/>
                 <field name="invoice_name" string="Factura"/>
                 <field name="nro_control" string="N&#xB0; Control" optional="show"/>
+                <field name="nro_factura" string="N&#xB0; Factura (Carga)" optional="hide"/>
                 <field name="payment_state" string="Estado Pago" widget="badge" optional="show"
                        decoration-success="payment_state == 'paid'"
                        decoration-info="payment_state == 'in_payment'"
@@ -284,12 +285,12 @@
                         no en el de la factura.
                     </div>
 
-                    <!-- Banner N° Control faltante -->
+                    <!-- Banner N° Control y N° Factura faltantes -->
                     <div class="alert alert-warning"
-                         invisible="state != 'borrador' or nro_control"
+                         invisible="state != 'borrador' or nro_control or nro_factura"
                          role="alert">
                         <i class="fa fa-exclamation-triangle" title="Advertencia"/>&#160;
-                        <strong>Falta N° Control</strong> — El comprobante no puede confirmarse sin N° Control.
+                        <strong>Falta N° Control y N° Factura</strong> — El comprobante no puede confirmarse sin al menos uno de los dos.
                     </div>
 
                     <!-- Banner Declarado sin Comprobante — se incluyó en C.66 y ya se
@@ -389,6 +390,9 @@
                             <field name="nro_control"
                                    readonly="1"
                                    string="N&#xB0; Control"/>
+                            <field name="nro_factura"
+                                   readonly="1"
+                                   string="N&#xB0; Factura (Carga)"/>
                             <field name="partner_id"
                                    string="Cliente / Agente de Retenci&#xF3;n"
                                    readonly="1"/>

@@ -14,7 +14,17 @@ class AccountMove(models.Model):
     nro_control = fields.Char(
         string='N° Control',
         help='Número de control de la factura. Formato: 00-0000000.\n'
-             'Su ausencia activa retención al 100% (PA SNAT/2025/000054).',
+             'La retención al 100% (PA SNAT/2025/000054) solo aplica si '
+             'ADEMÁS falta N° Factura -- ver ese campo.',
+        copy=False,
+    )
+    nro_factura = fields.Char(
+        string='N° Factura',
+        help='Número de Factura del cliente, tal cual viene en su Libro de '
+             'Ventas. Junto con N° Control identifica la factura para '
+             'efectos de retención -- el 100% (PA SNAT/2025/000054) solo '
+             'aplica si faltan AMBOS (decisión confirmada con el cliente '
+             '2026-08-21: un N° Factura válido basta para no penalizar).',
         copy=False,
     )
     zona = fields.Char(
@@ -189,11 +199,12 @@ class AccountMove(models.Model):
         if existing:
             return existing
 
-        # Si no hay N° Control → retención al 100%
-        if not self.nro_control:
+        # Si no hay N° Control NI N° Factura → retención al 100%
+        if not self.nro_control and not self.nro_factura:
             porcentaje = 100.0
             _logger.info(
-                've_retencion_iva: factura %s sin N° Control → 100%% de retención',
+                've_retencion_iva: factura %s sin N° Control ni N° Factura → '
+                '100%% de retención',
                 self.name,
             )
         else:
@@ -232,6 +243,7 @@ class AccountMove(models.Model):
             'invoice_id': self.id,
             'partner_id': self.partner_id.id,
             'nro_control': self.nro_control or False,
+            'nro_factura': self.nro_factura or False,
             'zona': self.zona or False,
             'periodo': periodo,
             'company_id': self.company_id.id,

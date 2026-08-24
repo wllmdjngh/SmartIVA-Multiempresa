@@ -385,11 +385,21 @@
                         <div class="mb-4" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
 
                             <!-- KPI Nuevo: Posición Neta SENIAT -->
-                            <div>
+                            <!-- Oculto si la compañía carga "Declarado" a mano
+                                 (ve_declarado_manual), pedido explícito
+                                 2026-08-22: ese modo se usa cuando se arranca con
+                                 un cliente a mitad de año con data histórica
+                                 (los meses previos no tienen la carga transaccional
+                                 completa en Odoo para calcular Débito/Créditos), así
+                                 que Posición Neta (que siempre lee el campo_90
+                                 CALCULADO por Odoo) tampoco tiene con qué calcularse
+                                 bien en esos meses, mejor no mostrarlo que mostrar
+                                 un número construido sobre datos incompletos. -->
+                            <div invisible="ve_declarado_manual">
                                 <div class="card h-100 shadow-sm" style="border-color:#336666;">
                                     <div class="card-header text-white fw-bold py-2"
                                          style="background-color:#336666;"
-                                         title="Débito Fiscal menos Créditos Fiscales menos Retenciones YA confirmadas (con comprobante). Distinta del Campo 90 oficial de la declaración, que usa todas las retenciones declaradas (incluye el monto esperado de comprobantes sin confirmar si están marcados para declarar) — esta es la lectura conservadora: qué se puede probar hoy.">
+                                         title="Espejo exacto del Campo 90 oficial de la Forma 030 (Débito Fiscal menos Créditos Fiscales menos las retenciones ya declaradas) — no es un cálculo aparte, es el mismo número que se declara al SENIAT.">
                                         Posici&#xf3;n Neta SENIAT
                                     </div>
                                     <div class="card-body d-flex flex-column p-2">
@@ -414,7 +424,7 @@
                                             </div>
                                         </div>
                                         <div class="text-center text-muted" style="font-size:0.7rem;">
-                                            D&#xe9;bito &#x2212; Cr&#xe9;ditos &#x2212; Retenciones confirmadas
+                                            Campo 90 (Forma 030): D&#xe9;bito &#x2212; Cr&#xe9;ditos &#x2212; Retenciones declaradas
                                         </div>
                                         <div class="d-flex align-items-center gap-2 justify-content-center mt-2 pt-2 border-top"
                                              title="No depende de esta Posición Neta — es la contraparte: cuánto crédito del período todavía NO está confirmado (No Recibido + Recibido sin Confirmar + Vencido) y qué % representa sobre el Débito Fiscal. Si se confirma, podría mover la Posición Neta de arriba.">
@@ -742,11 +752,13 @@
                                         </div>
                                     </div>
                                 </div>
-                                <!-- Fila 3: Posición Neta SENIAT (mismo cálculo que la tarjeta KPI) -->
-                                <div class="row g-2 align-items-center text-center mt-2">
+                                <!-- Fila 3: Posición Neta SENIAT (mismo cálculo que la tarjeta KPI),
+                                     oculta en modo "Declarado" manual, ver comentario en la tarjeta KPI. -->
+                                <div class="row g-2 align-items-center text-center mt-2"
+                                     invisible="ve_declarado_manual">
                                     <div class="col-md-4 text-start">
                                         <span class="small fw-semibold text-uppercase" style="color:#336666;">Posici&#xf3;n Neta SENIAT</span>
-                                        <div class="small text-muted">D&#xe9;bito &#x2212; Cr&#xe9;ditos &#x2212; Retenciones confirmadas</div>
+                                        <div class="small text-muted">Campo 90 (Forma 030): D&#xe9;bito &#x2212; Cr&#xe9;ditos &#x2212; Retenciones declaradas</div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="rounded p-2" style="border:1px solid #336666;">
@@ -912,8 +924,8 @@
                                     <div class="col-lg-7 col-md-6 border-end">
                                         <div class="small text-muted text-uppercase text-center mb-2"
                                              style="font-size:0.68rem;"
-                                             title="Por categoría, sumado en todo 2026: Retenciones Esperadas (cálculo legal real de SmartIVA por factura), Recibido (con comprobante confirmado), Pendiente por Recibir, Declarado, Total SENIAT y Conciliado.">
-                                            Esperadas / Recibido / Pendiente / Declarado / SENIAT / Conciliado (2026)
+                                             title="Por categoría, sumado en todo 2026: Retenciones Esperadas (cálculo legal real de SmartIVA por factura), Recibido (con comprobante confirmado), Declarado, Total SENIAT y Conciliado. Lo que falta por recibir es la diferencia visual entre Esperadas y Recibido — coincide exacto con &quot;Faltan&quot; de la tarjeta IOC de abajo.">
+                                            Esperadas / Recibido / Declarado / SENIAT / Conciliado (2026)
                                         </div>
                                         <div class="d-flex align-items-end justify-content-center" style="overflow-x:auto;">
                                             <field name="resumen_ytd_bars_html" readonly="1" nolabel="1"/>

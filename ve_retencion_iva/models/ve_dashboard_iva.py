@@ -16,6 +16,22 @@ class VeDashboardIva(models.Model):
 
     name = fields.Char(default='Dashboard IVA Venezuela', readonly=True)
 
+    # Expone res.company.ve_declarado_manual para poder ocultar en la vista
+    # (invisible="ve_declarado_manual") lo que dependa de un cálculo de
+    # Odoo que el contador ya decidió no usar para "Declarado" en esta
+    # compañía -- pedido explícito 2026-08-22: Posición Neta SENIAT
+    # siempre lee campo_90 (calculado por Odoo) sin importar este flag, así
+    # que para un cliente en modo manual ese número puede no reflejar lo
+    # que realmente declaró -- mejor no mostrarlo que mostrar un estimado
+    # que podría no coincidir con la realidad del cliente.
+    ve_declarado_manual = fields.Boolean(
+        compute='_compute_ve_declarado_manual', store=False)
+
+    def _compute_ve_declarado_manual(self):
+        manual = self.env.company.ve_declarado_manual
+        for rec in self:
+            rec.ve_declarado_manual = manual
+
     # ── Semáforo operativo ────────────────────────────────────────────────────
     total_vencidos = fields.Integer(
         string='Comprobantes Vencidos',
@@ -1380,6 +1396,19 @@ class VeDashboardIva(models.Model):
     _CONCIL_CONCILIADA_ESTADOS = (
         'conciliada', 'conciliada_norec', 'listo_declarar', 'declarado', 'aprobado_declarar')
 
+    # Estados para la barra "Conciliado" del gráfico de 6 series (mensual y
+    # Ene-Jun, ver _serie_valor_conciliado) -- a propósito un set MÁS ANCHO
+    # que _CONCIL_CONCILIADA_ESTADOS: acá SÍ se incluye 'diferencia'
+    # (pedido explícito 2026-08-22, la usuaria notó que ese gráfico de 6
+    # barras no tiene una barra aparte para "Diferencia" como sí tiene la
+    # dona de Salud de Conciliación -- por eso una retención con diferencia
+    # de monto no debe desaparecer del todo, tiene que contar como
+    # conciliada igual). NO usar este set más ancho en _calc_concil_buckets
+    # (la dona) -- ahí sí hay una porción separada para "Diferencia de
+    # monto"; agregar 'diferencia' también a _CONCIL_CONCILIADA_ESTADOS
+    # duplicaría esas filas en 2 porciones de la misma dona.
+    _SERIE_CONCILIADO_ESTADOS = _CONCIL_CONCILIADA_ESTADOS + ('diferencia',)
+
     def _calc_concil_buckets(self, wh_activos, seniat_recs):
         """Cantidad y monto de las 6 categorías de conciliación, para
         cualquier alcance (un período o varios — YTD). wh_activos/
@@ -1720,11 +1749,17 @@ class VeDashboardIva(models.Model):
         return sum(recs.mapped('monto_retenido'))
 
     def _serie_valor_conciliado(self, periodo):
-        """Monto TOTAL ya conciliado con SENIAT en ESE período -- mismo
-        criterio que el bucket "Conciliada" de _calc_concil_buckets
-        (estado_conciliacion in _CONCIL_CONCILIADA_ESTADOS), sin importar
-        si el comprobante físico ya llegó o no. Ampliado 2026-08-10
-        (pedido explícito) -- la versión anterior solo contaba lo
+        """Monto TOTAL ya conciliado con SENIAT en ESE período, CON o SIN
+        diferencia de monto, con o sin comprobante físico recibido --
+        usa _SERIE_CONCILIADO_ESTADOS (más ancho que
+        _CONCIL_CONCILIADA_ESTADOS de la dona de Salud de Conciliación:
+        acá sí incluye 'diferencia'). Ampliado 2026-08-22 (pedido
+        explícito): antes una retención con diferencia de monto contra
+        SENIAT desaparecía de este gráfico -- no sumaba en "Conciliado" ni
+        tenía una barra propia (a diferencia de la dona, que sí separa
+        "Diferencia de monto" en su propia porción). Ampliado antes,
+        2026-08-10, por el mismo motivo de fondo (no perder registros del
+        gráfico): la versión original solo contaba lo
         pendiente-por-recibir-pero-ya-conciliado (subconjunto angosto),
         que en Cementos daba 0 porque ahí todo lo conciliado ya tiene
         comprobante confirmado (state='confirmado', no esperado/vencido)."""
@@ -1732,9 +1767,21 @@ class VeDashboardIva(models.Model):
         recs = WH.search([
             ('conciliacion_id', '=', periodo.id),
             ('state', '!=', 'anulado'),
-            ('estado_conciliacion', 'in', self._CONCIL_CONCILIADA_ESTADOS),
+            ('estado_conciliacion', 'in', self._SERIE_CONCILIADO_ESTADOS),
         ])
         return sum(recs.mapped('monto_retenido'))
+
+    def _serie_cantidad_conciliado(self, periodo):
+        """Cantidad de comprobantes conciliados en ESE período -- mismo
+        universo/criterio que _serie_valor_conciliado (ver ahí), para el
+        tooltip "Cantidad/Monto" de RESUMEN Ene-Jun 2026 (pedido explícito
+        2026-08-22)."""
+        WH = self.env['ve.wh.iva']
+        return WH.search_count([
+            ('conciliacion_id', '=', periodo.id),
+            ('state', '!=', 'anulado'),
+            ('estado_conciliacion', 'in', self._SERIE_CONCILIADO_ESTADOS),
+        ])
 
     def _serie_valor_recibido(self, periodo):
         """Monto ya RECIBIDO con comprobante físico, para ESE período --
@@ -1753,6 +1800,28 @@ class VeDashboardIva(models.Model):
             ('estado_recepcion', 'in', WH._RECIBIDO_ESTADOS),
         ])
         return sum(recs.mapped('monto_recibido'))
+
+    def _serie_cantidad_recibido(self, periodo):
+        """Cantidad de comprobantes RECIBIDOS en ESE período -- mismo
+        criterio/universo que _serie_valor_recibido (ver ahí), para la
+        tarjeta IOC (pedido explícito 2026-08-22: mostrar cantidad/monto,
+        no solo el %)."""
+        WH = self.env['ve.wh.iva']
+        return WH.search_count([
+            ('conciliacion_id', '=', periodo.id),
+            ('estado_recepcion', 'in', WH._RECIBIDO_ESTADOS),
+        ])
+
+    def _serie_cantidad_estimado(self, periodo):
+        """Cantidad de comprobantes activos (state != anulado) en ESE
+        período -- mismo universo/criterio que _serie_valor_estimado (ver
+        ahí), para poder calcular "cantidad que falta" en las tarjetas
+        IOC/BDS (pedido explícito 2026-08-22)."""
+        WH = self.env['ve.wh.iva']
+        return WH.search_count([
+            ('conciliacion_id', '=', periodo.id),
+            ('state', '!=', 'anulado'),
+        ])
 
     def _serie_valor_estimado(self, periodo):
         """'Retenciones Esperadas': suma de monto_retenido (el cálculo legal
@@ -1841,7 +1910,9 @@ class VeDashboardIva(models.Model):
         'suma de monto_retenido de retenciones sin comprobante (Esperado/Vencido) y aun no declaradas.',
         'monto declarado a SENIAT segun carga manual mensual (Forma 99 / c66).',
         'total de comprobantes SENIAT descargados para este periodo (con o sin match en Odoo).',
-        'suma de monto_retenido de retenciones ya conciliadas con SENIAT (con o sin match).',
+        'suma de monto_retenido de retenciones ya conciliadas con SENIAT: incluye con o sin '
+        'diferencia de monto, con o sin comprobante fisico recibido -- todo lo que SENIAT '
+        'confirmo contra Odoo, matcheado.',
     )
 
     def _n_series_barras_html(self, grupos, baseline_y, w, h, labels, meses_valores,
@@ -1954,12 +2025,23 @@ class VeDashboardIva(models.Model):
         # componen el excedente.
         filas_sancion = []
         filas_subdeclaracion = []
+        # Cantidad de comprobantes (no solo monto) para las tarjetas IOC/BDS
+        # -- pedido explícito 2026-08-22. TAC se queda sin cantidad a
+        # propósito: "Declarado" es un total mensual sin desglose por
+        # comprobante (ver comentario de filas_sancion arriba), no hay un
+        # conteo real que mostrar.
+        base_cnt_ytd = 0
+        recibido_cnt_ytd = 0
+        seniat_cnt_ytd = 0
         for mes_str, quincenas in meses:
             estimado = round(sum(self._serie_valor_estimado(p) for p in quincenas), 2)
             recibido = round(sum(self._serie_valor_recibido(p) for p in quincenas), 2)
             pendiente = round(sum(self._serie_valor_pendiente_total(p) for p in quincenas), 2)
             conciliado = round(sum(self._serie_valor_conciliado(p) for p in quincenas), 2)
             seniat = round(sum(quincenas.mapped('total_seniat')), 2)
+            base_cnt_ytd += sum(self._serie_cantidad_estimado(p) for p in quincenas)
+            recibido_cnt_ytd += sum(self._serie_cantidad_recibido(p) for p in quincenas)
+            seniat_cnt_ytd += sum(quincenas.mapped('n_seniat'))
             if company.ve_declarado_manual:
                 anio_i, mes_i = int(mes_str[:4]), int(mes_str[5:7])
                 rec_decl = Declarado.search([
@@ -2001,40 +2083,60 @@ class VeDashboardIva(models.Model):
         recibido_ytd = round(sum(m[1] for m in meses_valores), 2)
         declarado_ytd = round(sum(m[3] for m in meses_valores), 2)
         seniat_ytd = round(sum(m[4] for m in meses_valores), 2)
-        ioc_html = self._ioc_tac_bds_html(base_ytd, recibido_ytd, declarado_ytd, seniat_ytd)
+        ioc_html = self._ioc_tac_bds_html(base_ytd, recibido_ytd, declarado_ytd, seniat_ytd,
+                                           base_cnt=base_cnt_ytd, ioc_cnt=recibido_cnt_ytd,
+                                           bds_cnt=seniat_cnt_ytd)
 
         for rec in self:
             rec.estimado_recibido_svg_html = html
             rec.riesgo_sancion_mensual_html = riesgo_html
             rec.ioc_tac_bds_html = ioc_html
 
-    def _ioc_tac_bds_html(self, base, ioc_logrado, tac_logrado, bds_logrado):
+    def _ioc_tac_bds_html(self, base, ioc_logrado, tac_logrado, bds_logrado,
+                          base_cnt=None, ioc_cnt=None, bds_cnt=None):
         """3 tarjetas (IOC/TAC/BDS) sobre la Base de Retenciones Esperadas
         YTD -- mismo cálculo/formato que la lámina de propuesta comercial
         en PowerPoint (gen_propuesta_cementos_pptx.py, universo
-        PROYECCIÓN), ahora en vivo dentro del Dashboard."""
-        def _tarjeta(color, titulo, logrado, descripcion):
+        PROYECCIÓN), ahora en vivo dentro del Dashboard.
+
+        ioc_cnt/bds_cnt (pedido explícito 2026-08-22, corregido en la
+        misma ronda -- la primera versión mostraba cantidad/monto de lo
+        LOGRADO, la usuaria pidió lo FALTANTE): cantidad de comprobantes
+        LOGRADOS en esas 2 tarjetas, usada junto con base_cnt para
+        calcular "cuántos faltan" (base_cnt - logrado_cnt) y mostrarlo
+        junto al monto que falta. TAC se queda sin cantidad a propósito
+        -- "Declarado" es un total mensual sin desglose por comprobante
+        (ver comentario en _compute_estimado_recibido), no hay un conteo
+        real que mostrar ahí."""
+        def _tarjeta(color, titulo, logrado, descripcion, cnt=None):
             pct = (logrado / base * 100) if base else 0.0
             faltante = base - logrado
             pct_falta = 100 - pct
+            cnt_faltan = (base_cnt - cnt) if (base_cnt is not None and cnt is not None) else None
+            cnt_txt = f'{cnt_faltan:,}'.replace(',', '.') + ' comp. — ' if cnt_faltan is not None else ''
             return (
                 '<div style="flex:1; min-width:0; background:#fff; border-radius:8px; '
                 f'padding:12px 14px; border-left:4px solid {color};">'
                 f'<div class="small fw-bold text-uppercase" style="color:{color}; font-size:0.68rem;">'
                 f'{escape(titulo)}</div>'
                 f'<div class="fw-bold" style="font-size:1.6rem; color:{color};">{pct:.1f}%</div>'
-                '<div class="text-muted" style="font-size:0.7rem;">'
-                f'Faltan Bs.{self._fmt_monto(faltante, 2)} ({pct_falta:.1f}%)</div>'
+                # "Faltan" agrandado y en negrilla (pedido explícito
+                # 2026-08-22) -- antes font-size:0.7rem + text-muted, se
+                # perdía al lado del % grande de arriba. Cantidad que
+                # falta (cnt_txt) antepuesta al monto, no la cantidad
+                # lograda.
+                '<div class="fw-bold" style="font-size:0.95rem; color:#333; margin-top:3px;">'
+                f'Faltan {cnt_txt}Bs.{self._fmt_monto(faltante, 2)} ({pct_falta:.1f}%)</div>'
                 f'<div class="text-muted" style="font-size:0.68rem; margin-top:2px;">{escape(descripcion)}</div>'
                 '</div>'
             )
         tarjetas = (
             _tarjeta('#17A2B8', 'Obtención de Comprobantes (IOC)', ioc_logrado,
-                     'de retenciones esperadas por obtener comprobante.')
+                     'de retenciones esperadas por obtener comprobante.', cnt=ioc_cnt)
             + _tarjeta('#28A745', 'Aprovechamiento de Créditos (TAC)', tac_logrado,
                        'de crédito fiscal potencial sin declarar/aprovechar.')
             + _tarjeta('#B5474D', 'Brecha vs. Portal SENIAT (BDS)', bds_logrado,
-                       'que los clientes aún no reportan al SENIAT.')
+                       'que los clientes aún no reportan al SENIAT.', cnt=bds_cnt)
         )
         return (
             f'<div class="text-muted mb-1" style="font-size:0.7rem;">'
@@ -2119,27 +2221,81 @@ class VeDashboardIva(models.Model):
             ('company_id', '=', self.env.company.id),
             ('state', '!=', 'anulado'),
         ])
-        claves_ctrl = set()
-        claves_factura = set()
-        for wh in wh_activos:
-            rif = norm_rif(wh.rif)
-            if wh.nro_control:
-                claves_ctrl.add((rif, norm_ctrl(wh.nro_control)))
-            factura = wh.invoice_id.name if wh.invoice_id else wh.nro_documento
-            if factura:
-                claves_factura.add((rif, norm_factura(factura)))
-
         seniat_recs = self.env['ve.seniat.retencion'].search([
             ('company_id', '=', self.env.company.id),
         ])
+
+        # Bug real confirmado 2026-08-22 (Vencement): la versión anterior
+        # solo miraba si la clave (RIF+Control o RIF+Factura) EXISTÍA del
+        # lado Odoo, sin replicar la cascada real de _do_conciliar --
+        # contaba como "con match" 10 registros (Bs. 1.876.142,14) que en
+        # realidad quedan "Solo SENIAT" tanto en el Excel como en la dona
+        # de Salud de Conciliación, porque SENIAT reutiliza un mismo
+        # N°Control entre 2-3 comprobantes reales distintos del mismo
+        # agente (mismo patrón ya documentado en _do_conciliar 2026-08-05)
+        # y ve_conciliacion.py::_do_conciliar se niega a adivinar cuál es
+        # el correcto -- deja a TODOS sin vincular.
+        #
+        # Para no volver a desincronizarse (ya pasó una vez, ver docstring
+        # de arriba), esto ahora REPLICA la cascada completa de
+        # _do_conciliar (N1 RIF+Control, desambiguar por N° Factura si hay
+        # más de 1 candidato, fallback N2 RIF+Factura, "más de 1 candidato
+        # tras ambos niveles" = sin match) en vez de un atajo por
+        # conteo -- sigue sin escribir nada, es una simulación de solo
+        # lectura. Si `_do_conciliar` cambia su cascada, hay que replicar
+        # el cambio acá también (no hay forma de compartir código sin
+        # tocar ese método crítico -- ver también _CONCIL_CONCILIADA_
+        # ESTADOS, mismo patrón de duplicación consciente en este archivo).
+        by_ctrl = {}
+        by_factura = {}
+        seniat_norm_factura = {}
+        for s in seniat_recs:
+            s_rif = norm_rif(s.rif_agente)
+            s_ctrl = norm_ctrl(s.nro_control)
+            s_factura = norm_factura(s.nro_documento)
+            seniat_norm_factura[s.id] = s_factura
+            if s_ctrl:
+                by_ctrl.setdefault((s_rif, s_ctrl), []).append(s)
+            if s_factura:
+                by_factura.setdefault((s_rif, s_factura), []).append(s)
+
+        SeniatEmpty = self.env['ve.seniat.retencion']
+        seniat_matched_ids = set()
+        for wh in wh_activos:
+            wh_rif = norm_rif(wh.rif)
+            wh_ctrl_norm = norm_ctrl(wh.nro_control)
+            wh_factura_raw = (wh.invoice_id.name if wh.invoice_id else (wh.nro_documento or '')).strip().upper()
+            wh_factura_norm = norm_factura(wh_factura_raw)
+
+            seniat_match = SeniatEmpty
+            if wh_ctrl_norm:
+                candidatos_list = [
+                    s for s in by_ctrl.get((wh_rif, wh_ctrl_norm), [])
+                    if s.id not in seniat_matched_ids
+                ]
+                if len(candidatos_list) > 1 and wh_factura_norm:
+                    por_doc = [s for s in candidatos_list if seniat_norm_factura[s.id] == wh_factura_norm]
+                    if por_doc:
+                        candidatos_list = por_doc
+                if candidatos_list:
+                    seniat_match = SeniatEmpty.browse([s.id for s in candidatos_list])
+
+            if not seniat_match and wh_factura_norm:
+                candidatos_list = [
+                    s for s in by_factura.get((wh_rif, wh_factura_norm), [])
+                    if s.id not in seniat_matched_ids
+                ]
+                if candidatos_list:
+                    seniat_match = SeniatEmpty.browse([s.id for s in candidatos_list])
+
+            if len(seniat_match) == 1:
+                seniat_matched_ids.add(seniat_match.id)
+
         total_general = 0.0
         sin_match = 0.0
         for s in seniat_recs:
             total_general += s.monto_retenido
-            rif = norm_rif(s.rif_agente)
-            match_n1 = s.nro_control and (rif, norm_ctrl(s.nro_control)) in claves_ctrl
-            match_n2 = s.nro_documento and (rif, norm_factura(s.nro_documento)) in claves_factura
-            if not (match_n1 or match_n2):
+            if s.id not in seniat_matched_ids:
                 sin_match += s.monto_retenido
         return sin_match, total_general
 
@@ -2178,35 +2334,74 @@ class VeDashboardIva(models.Model):
             '</div>'
         )
 
-    def _resumen_ytd_bars_html(self, valores, h=175):
-        """6 barras verticales lado a lado (Esperadas/Recibido/Pendiente/
-        Declarado/SENIAT/Conciliado), un total YTD por categoría -- mismos
-        colores/orden que el gráfico mensual (_compute_estimado_recibido)
-        para que se lean como el mismo lenguaje visual, pero agregado en
-        vez de por mes. Mismo patrón que _seniat_match_bars_html/
-        _sanciones_bars_html (altura proporcional al máximo, piso 2px).
-        h=175 (antes 140, +25%) -- pedido explícito 2026-08-14, junto con
-        _seniat_match_bars_html (90->113, misma proporción) para que toda
-        la sección RESUMEN YTD crezca pareja."""
-        nombres = ('Esperadas', 'Recibido', 'Pendiente', 'Declarado', 'SENIAT', 'Conciliado')
-        colores = (self._COLOR_ESTIMADO, self._COLOR_RECIBIDO, self._COLOR_PENDIENTE,
+    def _fmt_miles_millones(self, v):
+        """1234567890.4 → '1,23' (miles de millones = /1e9, 2 decimales,
+        coma decimal venezolana) -- pedido explícito 2026-08-22 para la
+        etiqueta arriba de cada barra de RESUMEN Ene-Jun 2026 (el monto
+        exacto en Bs sigue disponible en el tooltip)."""
+        return f'{v / 1e9:.2f}'.replace('.', ',')
+
+    def _resumen_ytd_bars_html(self, valores, cantidades=None, h=260):
+        """5 barras verticales lado a lado (Esperadas/Recibido/Declarado/
+        SENIAT/Conciliado), un total YTD por categoría -- mismos colores/
+        orden que el gráfico mensual (_compute_estimado_recibido, que sí
+        conserva las 6 series/Pendiente) para que se lean como el mismo
+        lenguaje visual, pero agregado en vez de por mes. Mismo patrón que
+        _seniat_match_bars_html/_sanciones_bars_html (altura proporcional
+        al máximo, piso 2px). h=260 (antes 175, pedido explícito
+        2026-08-22 -- "que se vea holgado"; label_h reserva espacio aparte
+        arriba de cada barra para el monto en miles de millones, pedido en
+        la misma ronda).
+
+        Barra "Pendiente" QUITADA de ESTE gráfico (pedido explícito
+        2026-08-22, misma ronda): tenía su propia definición
+        (_serie_valor_pendiente_total) que no coincidía con "Faltan" de la
+        tarjeta IOC -- el faltante real ya se lee como la diferencia
+        visual entre "Esperadas" y "Recibido" acá mismo, que sí coincide
+        exacto con IOC (ver comentario en _compute_resumen_ytd). El
+        gráfico MENSUAL (_compute_estimado_recibido) conserva sus 6 series
+        con Pendiente -- no se tocó, es un gráfico distinto.
+
+        cantidades (pedido explícito 2026-08-22): tupla paralela a
+        `valores`, cantidad de comprobantes detrás de cada barra para el
+        tooltip "Cantidad/Monto" -- None en la posición de una barra sin
+        conteo real (Declarado: total mensual sin desglose por
+        comprobante, mismo motivo que en IOC/TAC/BDS)."""
+        nombres = ('Esperadas', 'Recibido', 'Declarado', 'SENIAT', 'Conciliado')
+        colores = (self._COLOR_ESTIMADO, self._COLOR_RECIBIDO,
                    self._COLOR_DECLARADO, self._COLOR_SENIAT, self._COLOR_CONCILIADO)
+        # _EXPLICACIONES_6_SERIES sigue las 6 series del gráfico mensual
+        # (Esperadas/Recibido/Pendiente/Declarado/SENIAT/Conciliado) -- se
+        # salta el índice 2 (Pendiente) acá para no duplicar los textos.
+        explicaciones = tuple(
+            e for i, e in enumerate(self._EXPLICACIONES_6_SERIES) if i != 2)
+        if cantidades is None:
+            cantidades = (None,) * len(valores)
         maximo = max(valores) or 1.0
+        label_h = 16
         barras = []
         etiquetas = []
         # Ancho de barra/etiqueta subido de 46px a 58px (pedido explícito
         # 2026-08-14, ronda 2 -- todavía se veía apretado) -- gap-3 se
         # mantiene, ahora hay más ancho de columna disponible (col-lg-7).
-        for nombre, color, valor, explic in zip(nombres, colores, valores, self._EXPLICACIONES_6_SERIES):
+        for nombre, color, valor, cnt, explic in zip(nombres, colores, valores, cantidades, explicaciones):
             alto = max(2, round((valor / maximo) * h)) if valor else 0
+            monto_mm = self._fmt_miles_millones(valor)
+            cnt_txt = (f'{cnt:,}'.replace(',', '.') + ' comp. — ') if cnt is not None else ''
             barras.append(
+                f'<div style="display:flex; flex-direction:column; align-items:center; '
+                f'justify-content:flex-end; width:58px; height:{h + label_h}px;">'
+                f'<div style="font-size:0.64rem; font-weight:700; color:#333; margin-bottom:2px; '
+                f'white-space:nowrap;">{monto_mm}</div>'
                 f'<div style="width:58px; height:{alto}px; background-color:{color}; '
-                f'border-radius:3px 3px 0 0;" title="{nombre} (Ene-Jun 2026): Bs.{self._fmt_monto(valor)}&#10;{explic}"></div>')
+                f'border-radius:3px 3px 0 0;" title="{nombre} (Ene-Jun 2026): {cnt_txt}Bs.{self._fmt_monto(valor)}&#10;{explic}"></div>'
+                '</div>')
             etiquetas.append(
                 f'<span style="width:58px; text-align:center; overflow-wrap:break-word;">{nombre}</span>')
         return (
             '<div style="display:flex; flex-direction:column; align-items:center; gap:4px; width:100%;">'
-            f'<div class="d-flex align-items-end justify-content-center gap-3" style="height:{h}px;">'
+            '<div class="text-muted" style="font-size:0.6rem;">(montos en miles de millones de Bs.)</div>'
+            f'<div class="d-flex align-items-end justify-content-center gap-3" style="height:{h + label_h}px;">'
             + ''.join(barras) +
             '</div>'
             '<div class="d-flex gap-3" style="font-size:0.62rem; line-height:1.15;">'
@@ -2230,9 +2425,19 @@ class VeDashboardIva(models.Model):
             ('periodo', '>=', f'{ANIO}-01'),
             ('periodo', '<=', f'{ANIO}-06'),
         ])
+        # Barra "Pendiente" QUITADA (pedido explícito 2026-08-22): tenía su
+        # propia definición (_serie_valor_pendiente_total, esperado/vencido
+        # sin declarar) que NO coincidía con "Faltan" de la tarjeta IOC
+        # (base − recibido) -- confundía comparar las dos. El faltante real
+        # ya se lee como la diferencia visual entre "Esperadas" y
+        # "Recibido" de este mismo gráfico, que por construcción SÍ es
+        # exactamente igual a "Faltan" de IOC (mismas sumas estimado_ytd/
+        # recibido_ytd que usa _compute_estimado_recibido para
+        # base_ytd/recibido_ytd) -- verificado 2026-08-22: Bs.5.961.588.612,40
+        # − Bs.3.943.902.106,33 = Bs.2.017.686.506,07, igual a "Faltan" de
+        # IOC al centavo.
         estimado = round(sum(self._serie_valor_estimado(p) for p in periodos), 2)
         recibido = round(sum(self._serie_valor_recibido(p) for p in periodos), 2)
-        pendiente = round(sum(self._serie_valor_pendiente_total(p) for p in periodos), 2)
         conciliado = round(sum(self._serie_valor_conciliado(p) for p in periodos), 2)
         seniat = round(sum(periodos.mapped('total_seniat')), 2)
         if company.ve_declarado_manual:
@@ -2243,8 +2448,19 @@ class VeDashboardIva(models.Model):
             declarado = round(sum(recs_decl.mapped('monto_declarado')), 2)
         else:
             declarado = round(sum(self._serie_valor_declarado_auto(p) for p in periodos), 2)
+
+        # Cantidades para el tooltip "Cantidad/Monto" (pedido explícito
+        # 2026-08-22) -- Declarado se queda en None a propósito, mismo
+        # motivo que en IOC/TAC/BDS: es un total mensual sin desglose por
+        # comprobante.
+        cnt_estimado = sum(self._serie_cantidad_estimado(p) for p in periodos)
+        cnt_recibido = sum(self._serie_cantidad_recibido(p) for p in periodos)
+        cnt_conciliado = sum(self._serie_cantidad_conciliado(p) for p in periodos)
+        cnt_seniat = sum(periodos.mapped('n_seniat'))
+
         bars_html = self._resumen_ytd_bars_html(
-            (estimado, recibido, pendiente, declarado, seniat, conciliado))
+            (estimado, recibido, declarado, seniat, conciliado),
+            (cnt_estimado, cnt_recibido, None, cnt_seniat, cnt_conciliado))
         for rec in self:
             rec.resumen_ytd_bars_html = bars_html
 

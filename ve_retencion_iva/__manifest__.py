@@ -1,6 +1,6 @@
 {
     'name': 'Venezuela - Retenciones IVA',
-    'version': '19.0.2.14.111',
+    'version': '19.0.2.14.145',
     'category': 'Accounting/Localizations',
     'summary': 'Retenciones IVA Venezuela – DJCS',
     'description': '''
@@ -47,6 +47,9 @@ CONFIGURACIÓN REQUERIDA (ver README.md):
         'wizards/wizard_carga_seniat_views.xml',
         'wizards/wizard_crear_periodo_views.xml',
         'wizards/wizard_declarado_mensual_views.xml',
+        'wizards/wizard_conciliacion_smartiva_seniat_views.xml',
+        'wizards/wizard_conciliacion_libro_ventas_views.xml',
+        'wizards/wizard_reporte_ejecutivo_views.xml',
         'wizards/wizard_reset_demo_views.xml',
         'wizards/wizard_reset_piloto_views.xml',
         'wizards/wizard_setup_compania_views.xml',

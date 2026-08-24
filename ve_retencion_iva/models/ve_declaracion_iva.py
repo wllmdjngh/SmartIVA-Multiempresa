@@ -614,7 +614,13 @@ class VeDeclaracionIva(models.Model):
         # declarar tampoco debe tocarse al deshacer.
         reblanqueados = declarados.filtered(lambda r: r.estado_conciliacion == 'declarado')
         if reblanqueados:
-            reblanqueados.write({'estado_conciliacion': 'listo_declarar'})
+            # estado_conciliacion no está en el allowlist del candado de
+            # MEJORA-INMUTABILIDAD-01 (ve_wh_iva.py::write) porque en
+            # cualquier otro flujo modificarlo sobre una retención declarada
+            # sería el bug que ese candado existe para prevenir — acá es la
+            # única vía legítima de escape (deshacer la declaración).
+            reblanqueados.with_context(ve_bypass_lock_declarado=True).write(
+                {'estado_conciliacion': 'listo_declarar'})
         sin_comprobante = declarados.filtered(lambda r: r.declarado_sin_comprobante)
         if sin_comprobante:
             sin_comprobante.write({'declarado_sin_comprobante': False})

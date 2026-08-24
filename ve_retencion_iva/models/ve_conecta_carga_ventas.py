@@ -1152,6 +1152,7 @@ class VeConectaCargaVentas(models.Model):
                         'company_id': self.company_id.id,
                         'currency_id': self.company_id.currency_id.id,
                         'nro_control': linea.nro_control or False,
+                        'nro_factura': linea.nro_documento or False,
                         'zona': linea.zona or False,
                         'invoice_line_ids': lineas_nc,
                     })
@@ -1352,6 +1353,7 @@ class VeConectaCargaVentas(models.Model):
                 'company_id': self.company_id.id,
                 'currency_id': self.company_id.currency_id.id,
                 'nro_control': linea.nro_control or False,
+                'nro_factura': linea.nro_documento or False,
                 'zona': linea.zona or False,
                 'invoice_line_ids': lineas_factura,
             })
@@ -1553,10 +1555,18 @@ class VeConectaCargaVentas(models.Model):
             # así que sin esto "Diferencia" salía falsa cada vez que el
             # archivo traía esa columna con datos.
             base_archivo_tot += linea.base_16 + linea.base_8 + linea.base_exento
-            base_odoo_tot += linea.invoice_id.amount_untaxed
             iva_archivo_tot += linea.monto_iva
-            iva_odoo_tot += linea.invoice_id.amount_tax
             retenido_archivo_tot += linea.monto_retenido
+            # Segundo bug real 2026-08-20: una Nota de Crédito (Anulación de
+            # un par Registro+Anulación) trae base_16/base_8/monto_iva NEGATIVOS
+            # en el archivo (neteando contra su Registro), pero
+            # amount_untaxed/amount_tax de un move out_refund en Odoo SIEMPRE
+            # son positivos (misma convención que una factura normal, no un
+            # signo invertido) -- sumarlos tal cual duplicaba el monto del
+            # lado Odoo en vez de netearlo, inflando "Diferencia" en cada par.
+            signo = -1 if linea.invoice_id.move_type == 'out_refund' else 1
+            base_odoo_tot += signo * linea.invoice_id.amount_untaxed
+            iva_odoo_tot += signo * linea.invoice_id.amount_tax
 
         # Consistencia por Zona — pedido explícito 2026-08-02, tras validar
         # a mano por RPC (Cementos, Nov 1Q 2025) que Total/IVA/Monto
@@ -1686,10 +1696,7 @@ class VeConectaCargaVentas(models.Model):
             f'<th {th}>Diferencia</th></tr>'
             + _fila('Filas leídas', _n(len(self.linea_ids)))
             + _fila('Facturas creadas', _n(creadas))
-            + _fila('Facturas rechazadas (ver "Filas con error" más abajo si hubo error al '
-                    'postear; si quedaron bloqueadas sin intentar, ver "Filas bloqueadas '
-                    'pendientes" arriba; si fueron un par Registro+Anulación omitido, ver esa '
-                    'fila en la tabla de Detalle)',
+            + _fila('Facturas rechazadas (ver desglose por motivo más abajo)',
                     _n(len(self.linea_ids) - creadas))
             + _fila('Facturas sin Retención generada en SmartIVA (ver desglose más abajo)',
                     _n(creadas - retenciones_creadas))
@@ -1755,18 +1762,50 @@ class VeConectaCargaVentas(models.Model):
             else:
                 sin_ret_agente_false += 1
                 base_agente_false += base
-        # "TOTAL Sin Retención" se calcula de la MISMA lista que arma las 2
-        # filas del desglose (sin_retencion_lineas), no por resta aparte
-        # (creadas - retenciones_creadas) -- bug real encontrado 2026-08-20:
-        # esa resta podía dar un número mayor a sin_ret_agente_true +
-        # sin_ret_agente_false si algún camino de creación (ej. Notas de
-        # Crédito) incrementaba `creadas` sin pasar por sin_retencion_lineas
-        # (ya corregido arriba), dejando el TOTAL sin cuadrar con las filas
-        # que sí se ven. Con esto es correcto por construcción; el CHEQUEO de
-        # abajo sigue sirviendo para detectar si aparece un camino nuevo que
-        # tampoco pase por acá.
         sin_retencion = len(sin_retencion_lineas)
-        suma_cuadra = (retenciones_creadas + sin_retencion) == creadas
+
+        # Rechazadas — pedido explícito 2026-08-20: la tabla de abajo antes
+        # solo mostraba "Sin Retención" (facturas SÍ creadas sin retención),
+        # dejando las rechazadas (NUNCA llegaron a ser factura) fuera de
+        # cualquier desglose por motivo -- solo vivían como texto libre en
+        # "Filas con error"/contadores sueltos. Se categorizan acá con el
+        # mismo campo `categoria_discrepancia` que ya usa la pestaña
+        # Discrepancias (fuente única de verdad, ya se recalcula sola en
+        # cada línea -- no hay que rastrear listas nuevas durante el bucle
+        # de arriba).
+        rechazadas_lineas = self.linea_ids.filtered(lambda l: not l.invoice_id)
+        CATEGORIA_LABEL = dict(self._fields['categoria_discrepancia'].selection)
+        rechazadas_por_categoria = {}
+        for linea in rechazadas_lineas:
+            cat = linea.categoria_discrepancia or False
+            bucket = rechazadas_por_categoria.setdefault(cat, {'n': 0, 'base': 0.0})
+            bucket['n'] += 1
+            bucket['base'] += linea.base_16 + linea.base_8 + linea.base_exento
+        rechazadas = len(rechazadas_lineas)
+
+        # CHEQUEO ahora contra Filas Leídas (universo completo del archivo),
+        # no solo contra Facturas creadas -- pedido explícito: Retenciones
+        # Generadas + Sin Retención + Rechazadas debe sumar Filas Leídas.
+        total_filas = len(self.linea_ids)
+        no_generadas = sin_retencion + rechazadas
+        suma_cuadra = (retenciones_creadas + no_generadas) == total_filas
+
+        filas_rechazadas_html = ''
+        # Orden fijo (no por cantidad) para que la tabla no "salte" de
+        # posición entre cargas distintas -- más fácil de leer de un
+        # vistazo cuando se repite la prueba varias veces.
+        ORDEN_CATEGORIAS = ['duplicada', 'dato_faltante', 'fecha_invalida',
+                            'registro_anulacion', 'documento_vacio', 'error_posteo', False]
+        for cat in ORDEN_CATEGORIAS:
+            if cat not in rechazadas_por_categoria:
+                continue
+            b = rechazadas_por_categoria[cat]
+            etiqueta = CATEGORIA_LABEL.get(cat, 'Sin categoría (revisar)')
+            filas_rechazadas_html += (
+                f'<tr><td {td}><span style="color:#dc3545;">Rechazada — {etiqueta}</span></td>'
+                f'<td {tdr}>{_n(b["n"])}</td><td {tdr}>{_m(b["base"])}</td></tr>'
+            )
+
         tabla_sin_retencion = (
             f'<table style="border-collapse:collapse; font-size:0.85rem;">'
             f'<tr><th {th}>Motivo</th><th {th}>Cantidad</th>'
@@ -1776,15 +1815,17 @@ class VeConectaCargaVentas(models.Model):
             f'<tr><td {td}><span style="color:#dc3545;">Cliente SÍ es Agente de Retención pero no '
             f'se generó retención (revisar)</span></td>'
             f'<td {tdr}>{_n(sin_ret_agente_true)}</td><td {tdr}>{_m(base_agente_true)}</td></tr>'
-            f'<tr style="font-weight:700; border-top:2px solid #999;">'
-            f'<td {td}>TOTAL Sin Retención</td>'
-            f'<td {tdr}>{_n(sin_retencion)}</td><td {tdr}>{_m(base_agente_true + base_agente_false)}</td></tr>'
+            + filas_rechazadas_html
+            + f'<tr style="font-weight:700; border-top:2px solid #999;">'
+              f'<td {td}>TOTAL Sin Retención + Rechazadas</td>'
+              f'<td {tdr}>{_n(no_generadas)}</td>'
+              f'<td {tdr}>{_m(base_agente_true + base_agente_false + sum(b["base"] for b in rechazadas_por_categoria.values()))}</td></tr>'
             + '</table>'
             + f'<p style="font-size:0.75rem; color:#666;">CHEQUEO: Retenciones Generadas '
-              f'({_n(retenciones_creadas)}) + Sin Retención ({_n(sin_retencion)}) = '
+              f'({_n(retenciones_creadas)}) + Sin Retención + Rechazadas ({_n(no_generadas)}) = '
               f'<span style="color:{"#198754" if suma_cuadra else "#dc3545"};">'
-              f'{_n(retenciones_creadas + sin_retencion)}</span> '
-              f'— debe cuadrar con Facturas creadas ({_n(creadas)})</p>'
+              f'{_n(retenciones_creadas + no_generadas)}</span> '
+              f'— debe cuadrar con Filas Leídas ({_n(total_filas)})</p>'
         )
 
         # Tabla "Estimadas vs. Retenido Real" ELIMINADA (pedido explícito
@@ -1912,7 +1953,7 @@ class VeConectaCargaVentas(models.Model):
             + '<br/>'
             f'<b>— Consistencia —</b><br/>{tabla_consistencia}<br/>'
             f'<b>— Retenciones Generadas — Estado Actual —</b><br/>{tabla_estados}<br/>'
-            f'<b>— Facturas SIN Retención generada — Desglose por Motivo —</b><br/>{tabla_sin_retencion}<br/>'
+            f'<b>— Facturas SIN Retención Generada y Rechazadas — Desglose por Motivo —</b><br/>{tabla_sin_retencion}<br/>'
             f'<b>— Montos: Archivo vs. Odoo —</b><br/>{tabla_montos}<br/>'
             + (f'<b>— Consistencia por Zona —</b><br/>{tabla_zona}<br/>' if hay_zonas else '')
             + f'<b>— Detalle —</b><br/>{tabla_detalle}'
@@ -2435,10 +2476,18 @@ class VeConectaCargaVentasLinea(models.Model):
                 linea.es_duplicado_factura = False
                 linea.es_duplicado_retencion = False
                 linea.bloqueante = False
-                if linea.es_anulacion_par and not linea.invoice_id:
-                    # Se omitió a propósito al confirmar (ver
-                    # action_confirmar) -- conservar la nota, no pisarla con
-                    # "Cliente creado"/vacío como las demás filas.
+                if linea.es_anulacion_par:
+                    # Bug real encontrado 2026-08-21: esta condición exigía
+                    # "and not linea.invoice_id" -- leftover de una versión
+                    # anterior donde la Anulación se omitía sin factura
+                    # propia. Hoy (ver action_confirmar) AMBOS lados del par
+                    # -- Registro Y Anulación -- se facturan de verdad (la
+                    # Anulación como Nota de Crédito real, con su propio
+                    # invoice_id), así que la condición nunca se cumplía y
+                    # categoria_discrepancia caía siempre al 'False' de más
+                    # abajo -- 335 de 438 pares en Vencement quedaron con la
+                    # etiqueta perdida (par SÍ resuelto correctamente, solo
+                    # la clasificación de la pestaña Discrepancias mentía).
                     linea.categoria_discrepancia = 'registro_anulacion'
                     continue
                 linea.categoria_discrepancia = False

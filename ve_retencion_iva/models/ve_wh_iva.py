@@ -416,6 +416,19 @@ class VeWhIva(models.Model):
              'si no nro_documento) -- ver _do_conciliar.',
     )
     nro_control = fields.Char(string='Nro. Control', tracking=True)
+    nro_factura = fields.Char(
+        string='N° Factura (Carga)', tracking=True,
+        help='Copiado de la factura al crear la retención (ver '
+             'account.move.nro_factura) -- junto con N° Control, evita la '
+             'retención al 100% si al menos uno de los dos está presente. '
+             'Distinto de "N° Factura" (invoice_name, related a '
+             'invoice_id.name): ese es el nombre real de la factura en '
+             'Odoo (puede haber caído al N° Control como respaldo si '
+             'faltaba este dato al cargar); este es siempre el dato tal '
+             'cual vino del Libro de Ventas, sin fallback -- etiqueta '
+             'distinta a propósito (evita advertencia de labels duplicados '
+             'en ir_model.py, ambos campos convivían con el mismo label).',
+    )
     doc_afectado = fields.Char(string='Documento Afectado')
     zona = fields.Char(
         string='Zona/Planta',
@@ -838,15 +851,16 @@ class VeWhIva(models.Model):
     # VALIDACIONES
     # ════════════════════════════════════════════════════════════════════════
 
-    @api.constrains('state', 'nro_control', 'porcentaje_retencion')
+    @api.constrains('state', 'nro_control', 'nro_factura', 'porcentaje_retencion')
     def _check_confirmado_nro_control(self):
         for rec in self:
             if (rec.state == 'confirmado'
                     and not rec.nro_control
+                    and not rec.nro_factura
                     and (rec.porcentaje_retencion or 0) < 100.0):
                 raise ValidationError(
-                    f'El N° Control es obligatorio para confirmar la retención '
-                    f'de {rec.partner_id.name or "—"} '
+                    f'El N° Control o el N° Factura es obligatorio para '
+                    f'confirmar la retención de {rec.partner_id.name or "—"} '
                     f'(excepción: retenciones al 100%).'
                 )
 
@@ -868,9 +882,12 @@ class VeWhIva(models.Model):
 
     @api.onchange('invoice_id')
     def _onchange_invoice_id_nro_control(self):
-        """Auto-completa N° Control desde la factura cuando el campo está vacío."""
-        if self.invoice_id and self.invoice_id.nro_control and not self.nro_control:
-            self.nro_control = self.invoice_id.nro_control
+        """Auto-completa N° Control / N° Factura desde la factura cuando el campo está vacío."""
+        if self.invoice_id:
+            if self.invoice_id.nro_control and not self.nro_control:
+                self.nro_control = self.invoice_id.nro_control
+            if self.invoice_id.nro_factura and not self.nro_factura:
+                self.nro_factura = self.invoice_id.nro_factura
 
     @api.onchange('name')
     def _onchange_name_warn(self):
@@ -893,9 +910,10 @@ class VeWhIva(models.Model):
             errors.append('La retención debe tener una factura vinculada.')
         if not self.name:
             errors.append('El N° Comprobante es obligatorio.')
-        if not self.nro_control and (self.porcentaje_retencion or 0) < 100.0:
+        if (not self.nro_control and not self.nro_factura
+                and (self.porcentaje_retencion or 0) < 100.0):
             errors.append(
-                'El N° Control es obligatorio para confirmar '
+                'El N° Control o el N° Factura es obligatorio para confirmar '
                 '(solo se omite en retenciones al 100%).'
             )
         if not self.partner_id:
@@ -984,6 +1002,41 @@ class VeWhIva(models.Model):
                 if open_period:
                     sin_periodo.write({'conciliacion_id': open_period.id})
         return records
+
+    # Campos que siguen editables sobre una retención ya declarada
+    # (estado_declaracion == 'declarado') — MEJORA-INMUTABILIDAD-01. Son
+    # exactamente los que `wizard_subir_comprobante.action_guardar` escribe
+    # cuando el papel físico llega tarde (FIX-COMP-DECLARADO-01): dejan
+    # constancia documental sin tocar la declaración ya presentada.
+    _CAMPOS_EDITABLES_DECLARADO = frozenset({
+        'name', 'tipo_documento', 'nro_documento', 'nro_control',
+        'comp_base_16', 'comp_iva_16', 'comp_base_8', 'comp_iva_8',
+        'comp_base_exento', 'comp_base_nogravado', 'comp_monto_retenido',
+        'canal_recepcion', 'fecha', 'state',
+        # El propio Eje 3 y sus derivados — solo así puede "deshacerse" una
+        # declaración (ve_declaracion_iva.py::action_deshacer_declaracion) o
+        # marcarse "declarado_sin_comprobante" al declarar.
+        'estado_declaracion', 'declarado_sin_comprobante',
+        # El seguimiento (recordatorio/llamada) sigue activo sobre una
+        # retención "declarado_sin_comprobante" — el papel físico aún no
+        # llegó aunque ya se declaró al SENIAT (ver FIX-COMP-DECLARADO-01).
+        'fecha_ultimo_recordatorio', 'fecha_ultima_llamada',
+    })
+
+    def write(self, vals):
+        campos_bloqueados = set(vals) - self._CAMPOS_EDITABLES_DECLARADO
+        if campos_bloqueados and not self.env.context.get('ve_bypass_lock_declarado'):
+            ya_declaradas = self.filtered(lambda r: r.estado_declaracion == 'declarado')
+            if ya_declaradas:
+                raise UserError(
+                    'No se puede modificar "%s" — la retención %s ya fue '
+                    'declarada al SENIAT (Forma 030).\n'
+                    'Use "Deshacer Declaración" en la Declaración IVA del '
+                    'período si necesita corregirla.'
+                    % (', '.join(sorted(campos_bloqueados)),
+                       ya_declaradas[0].ref or ya_declaradas[0].name or ya_declaradas[0].id)
+                )
+        return super().write(vals)
 
     # ════════════════════════════════════════════════════════════════════════
     # TRANSICIONES DE ESTADO

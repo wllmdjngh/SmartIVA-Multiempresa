@@ -14,3 +14,6 @@ from . import wizard_registrar_llamada
 from . import wizard_enviar_recordatorio
 from . import wizard_crear_periodo
 from . import wizard_declarado_mensual
+from . import wizard_conciliacion_smartiva_seniat
+from . import wizard_conciliacion_libro_ventas
+from . import wizard_reporte_ejecutivo

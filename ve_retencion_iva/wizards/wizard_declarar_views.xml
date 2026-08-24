@@ -11,6 +11,14 @@
                         Ingrese el <strong>N° Certificado SENIAT</strong> (21 d&#xED;gitos)
                         asignado por el SENIAT y adjunte la planilla PDF antes de confirmar.
                     </div>
+                    <div class="alert alert-warning" role="alert">
+                        <i class="fa fa-lock" title="Inmutabilidad"/>&#160;
+                        <strong>Una vez confirmado, las retenciones de este per&#xED;odo
+                        quedar&#xE1;n bloqueadas</strong> y no podr&#xE1;n modificarse (montos,
+                        RIF, N&#xBA; de Control, etc.) — solo se podr&#xE1; seguir completando
+                        datos del comprobante f&#xED;sico si llega despu&#xE9;s. Para corregir
+                        algo tras declarar, primero use <strong>"Deshacer Declaraci&#xF3;n"</strong>.
+                    </div>
                     <group>
                         <field name="declaracion_iva_id" readonly="1"/>
                         <field name="nro_declaracion" required="1" placeholder="21 d&#xED;gitos"/>

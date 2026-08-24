@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="wizard_conciliacion_smartiva_seniat_view_form" model="ir.ui.view">
+        <field name="name">ve.conciliacion.smartiva.seniat.wizard.form</field>
+        <field name="model">ve.conciliacion.smartiva.seniat.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Conciliación SmartIVA-SENIAT">
+                <div class="alert alert-info" role="alert">
+                    Genera un Excel comparando SmartIVA (retenciones esperadas) contra
+                    SENIAT (comprobantes reales descargados del portal), con desglose
+                    por Estado de Conciliación -- Resumen mensual + una pestaña por
+                    quincena. Incluye el caso "Cliente no Contribuyente pero con
+                    retención en SENIAT".
+                </div>
+                <group>
+                    <field name="company_id" groups="base.group_multi_company"/>
+                    <field name="periodo_desde_id"/>
+                    <field name="periodo_hasta_id"/>
+                </group>
+                <footer>
+                    <button name="action_generar" string="Generar Excel" type="object"
+                            class="btn-primary"/>
+                    <button string="Cancelar" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="wizard_conciliacion_smartiva_seniat_action" model="ir.actions.act_window">
+        <field name="name">Conciliación SmartIVA-SENIAT</field>
+        <field name="res_model">ve.conciliacion.smartiva.seniat.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

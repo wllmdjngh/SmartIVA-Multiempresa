@@ -117,6 +117,27 @@
               action="ve_wh_iva_action_concil"
               sequence="60"/>
 
+    <menuitem id="DJCS_menu_iva_clientes_smartiva_seniat"
+              name="Reporte Conciliaci&#xF3;n SmartIVA-SENIAT"
+              parent="DJCS_menu_iva_clientes"
+              action="wizard_conciliacion_smartiva_seniat_action"
+              sequence="55"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_libro_vs_smartiva"
+              name="Reporte Conciliaci&#xF3;n Libro de Ventas vs SmartIVA"
+              parent="DJCS_menu_iva_clientes"
+              action="wizard_conciliacion_libro_ventas_action"
+              sequence="57"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <menuitem id="DJCS_menu_iva_clientes_reporte_ejecutivo"
+              name="Reporte Ejecutivo SmartIVA"
+              parent="DJCS_menu_iva_clientes"
+              action="wizard_reporte_ejecutivo_action"
+              sequence="58"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
     <!-- Independiente del Dashboard IVA por ahora (ver REPOSICIONAMIENTO_MI_ERP.md /
          SMARTIVA_FUNCIONALIDADES_POST_MI_ERP.md) — candidato a integrarse como
          bloque del Dashboard una vez validado con la usuaria. -->
