@@ -696,8 +696,7 @@ class VeWhIva(models.Model):
                 # Se declaró (C.66 a mano) sin haber recibido nunca el papel —
                 # su recepción real sigue sin llegar, sin importar que `state`
                 # (en registros legado de antes de la Etapa 4 de este
-                # rediseño) todavía diga 'declarado'/'conciliado'. Misma
-                # fecha de corte que ya usa action_deshacer_declaracion.
+                # rediseño) todavía diga 'declarado'/'conciliado'.
                 rec.estado_recepcion = (
                     'vencido'
                     if rec.fecha_vencimiento_entrega and rec.fecha_vencimiento_entrega <= hoy
@@ -1013,9 +1012,8 @@ class VeWhIva(models.Model):
         'comp_base_16', 'comp_iva_16', 'comp_base_8', 'comp_iva_8',
         'comp_base_exento', 'comp_base_nogravado', 'comp_monto_retenido',
         'canal_recepcion', 'fecha', 'state',
-        # El propio Eje 3 y sus derivados — solo así puede "deshacerse" una
-        # declaración (ve_declaracion_iva.py::action_deshacer_declaracion) o
-        # marcarse "declarado_sin_comprobante" al declarar.
+        # El propio Eje 3 y sus derivados — se marcan "declarado"/
+        # "declarado_sin_comprobante" al declarar.
         'estado_declaracion', 'declarado_sin_comprobante',
         # El seguimiento (recordatorio/llamada) sigue activo sobre una
         # retención "declarado_sin_comprobante" — el papel físico aún no
@@ -1025,14 +1023,12 @@ class VeWhIva(models.Model):
 
     def write(self, vals):
         campos_bloqueados = set(vals) - self._CAMPOS_EDITABLES_DECLARADO
-        if campos_bloqueados and not self.env.context.get('ve_bypass_lock_declarado'):
+        if campos_bloqueados:
             ya_declaradas = self.filtered(lambda r: r.estado_declaracion == 'declarado')
             if ya_declaradas:
                 raise UserError(
                     'No se puede modificar "%s" — la retención %s ya fue '
-                    'declarada al SENIAT (Forma 030).\n'
-                    'Use "Deshacer Declaración" en la Declaración IVA del '
-                    'período si necesita corregirla.'
+                    'declarada al SENIAT (Forma 030) y no se puede revertir.'
                     % (', '.join(sorted(campos_bloqueados)),
                        ya_declaradas[0].ref or ya_declaradas[0].name or ya_declaradas[0].id)
                 )

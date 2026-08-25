@@ -40,7 +40,7 @@ class VeRegistrarLlamadaWizard(models.TransientModel):
             if len(contactos) == 1:
                 res['contacto_id'] = contactos.id
                 res['contacto_nombre'] = contactos.name
-                res['phone'] = contactos.phone or contactos.mobile
+                res['phone'] = contactos.phone or getattr(contactos, 'mobile', False)
                 res['email'] = contactos.email
         return res
 
@@ -48,7 +48,7 @@ class VeRegistrarLlamadaWizard(models.TransientModel):
     def _onchange_contacto_id(self):
         if self.contacto_id:
             self.contacto_nombre = self.contacto_id.name
-            self.phone = self.contacto_id.phone or self.contacto_id.mobile
+            self.phone = self.contacto_id.phone or getattr(self.contacto_id, 'mobile', False)
             self.email = self.contacto_id.email
 
     def _resolver_contacto(self):

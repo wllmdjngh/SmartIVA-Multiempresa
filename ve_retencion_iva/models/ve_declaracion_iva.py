@@ -598,56 +598,6 @@ class VeDeclaracionIva(models.Model):
             subtype_xmlid='mail.mt_note',
         )
 
-    def action_deshacer_declaracion(self):
-        self.ensure_one()
-        if self.estado != 'presentada':
-            raise UserError('Solo se puede deshacer una declaración en estado "Presentada".')
-        declarados = self.conciliacion_id.wh_iva_ids.filtered(lambda r: r.estado_declaracion == 'declarado')
-        # Desde la Etapa 3 del rediseño de 3 ejes, declarar ya no toca
-        # `state` — no hay nada que adivinar para revertir (antes había que
-        # recalcular si un "sin comprobante" volvía a esperado o vencido
-        # comparando su fecha límite contra hoy). Deshacer es solo apagar
-        # el Eje 3 + restaurar estado_conciliacion SOLO en los que
-        # realmente se habían "blanqueado" a 'declarado' al presentar
-        # (mismo criterio inverso que _marcar_wh_iva_declarados) — un
-        # descuadre real (diferencia/sin match) que nunca se tocó al
-        # declarar tampoco debe tocarse al deshacer.
-        reblanqueados = declarados.filtered(lambda r: r.estado_conciliacion == 'declarado')
-        if reblanqueados:
-            # estado_conciliacion no está en el allowlist del candado de
-            # MEJORA-INMUTABILIDAD-01 (ve_wh_iva.py::write) porque en
-            # cualquier otro flujo modificarlo sobre una retención declarada
-            # sería el bug que ese candado existe para prevenir — acá es la
-            # única vía legítima de escape (deshacer la declaración).
-            reblanqueados.with_context(ve_bypass_lock_declarado=True).write(
-                {'estado_conciliacion': 'listo_declarar'})
-        sin_comprobante = declarados.filtered(lambda r: r.declarado_sin_comprobante)
-        if sin_comprobante:
-            sin_comprobante.write({'declarado_sin_comprobante': False})
-        con_comprobante = declarados - sin_comprobante
-        if declarados:
-            declarados.write({'estado_declaracion': 'no_declarado'})
-        self.write({
-            'estado': 'borrador',
-            'declarado_por_id': False,
-            'declarado_por_rpa': False,
-            'fecha_declaracion': False,
-            'nro_declaracion': False,
-        })
-        self.conciliacion_id.write({'estado': 'aprobado'})
-        self.message_post(
-            body=Markup(
-                '<b>Declaración revertida</b> por <b>{u}</b>.<br/>'
-                '{k} comprobante(s) vueltos a No Declarado.{k2}'
-            ).format(
-                u=self.env.user.name, k=len(con_comprobante),
-                k2=(f'<br/>{len(sin_comprobante)} comprobante(s) sin comprobante físico '
-                    f'vueltos a seguimiento (No Recibido/Vencido).' if sin_comprobante else ''),
-            ),
-            message_type='comment',
-            subtype_xmlid='mail.mt_note',
-        )
-
     def action_declarar_rpa(self):
         self.ensure_one()
         rpa_url = self.env['ir.config_parameter'].sudo().get_param(
