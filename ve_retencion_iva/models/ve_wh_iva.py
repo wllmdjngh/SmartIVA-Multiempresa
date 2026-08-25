@@ -1506,7 +1506,11 @@ class VeWhIva(models.Model):
 
     def action_abrir_registrar_llamada(self):
         """Abre un pop-up con los datos de contacto del cliente para llamar;
-        al confirmar registra la llamada en el chatter del comprobante."""
+        al confirmar registra la llamada en el chatter del comprobante.
+        ve_desde_lista_trabajo (ver ve_dashboard_iva_views.xml, context= en
+        el <field name="lista_trabajo_ids">) viaja al wizard para que sepa
+        si, al cerrar, debe reabrir el Dashboard (recomputa lista_trabajo_ids,
+        que es un campo no almacenado) en vez de solo cerrarse."""
         self.ensure_one()
         return {
             'type': 'ir.actions.act_window',
@@ -1514,7 +1518,10 @@ class VeWhIva(models.Model):
             'res_model': 've.registrar.llamada.wizard',
             'view_mode': 'form',
             'target': 'new',
-            'context': {'default_wh_iva_id': self.id},
+            'context': {
+                'default_wh_iva_id': self.id,
+                've_desde_lista_trabajo': self.env.context.get('ve_desde_lista_trabajo', False),
+            },
         }
 
     def _abrir_wizard_recordatorio(self, tipo):
@@ -1526,7 +1533,11 @@ class VeWhIva(models.Model):
             'res_model': 've.enviar.recordatorio.wizard',
             'view_mode': 'form',
             'target': 'new',
-            'context': {'default_wh_iva_id': self.id, 'default_tipo': tipo},
+            'context': {
+                'default_wh_iva_id': self.id,
+                'default_tipo': tipo,
+                've_desde_lista_trabajo': self.env.context.get('ve_desde_lista_trabajo', False),
+            },
         }
 
     def action_enviar_recordatorio(self):

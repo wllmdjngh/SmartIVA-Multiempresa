@@ -38,6 +38,31 @@
     background-color: rgba(47, 100, 89, 0.08);
 }
 
+/* Lista de Trabajo del Dashboard (ve_dashboard_iva_views.xml, campo
+   lista_trabajo_ids) -- pedido explícito 2026-08-25: Cliente y Factura
+   ocupaban demasiado ancho y empujaban los botones de acción (Abrir,
+   Llamada, Recordatorio) fuera de la vista sin hacer scroll horizontal.
+   Las fechas de seguimiento (Último Recordatorio/Última Llamada) y los
+   botones son lo más importante de esta vista -- nunca ocultarlos,
+   solo angostar Cliente/Factura. Scopeado con .o_lista_trabajo_list
+   (class= en la raíz <list>) porque partner_id/invoice_name se repiten
+   en muchas otras listas del backend. */
+.o_lista_trabajo_list th[data-name="partner_id"],
+.o_lista_trabajo_list td[data-name="partner_id"] {
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.o_lista_trabajo_list th[data-name="invoice_name"],
+.o_lista_trabajo_list td[data-name="invoice_name"] {
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .o_list_diferencias_archivo th[data-name="base_imponible_total"],
 .o_list_diferencias_archivo td[data-name="base_imponible_total"],
 .o_list_diferencias_archivo th[data-name="monto_iva_total"],
