@@ -60,6 +60,7 @@
                             type="object"
                             class="btn-secondary"
                             icon="fa-android"
+                            confirm="Una vez declarado, las retenciones de este período quedarán bloqueadas y no podrán modificarse (montos, RIF, N° de Control, etc.). ¿Confirmar declaración por RPA?"
                             invisible="estado == 'presentada'"/>
                     <field name="estado" widget="statusbar"
                            statusbar_visible="borrador,presentada"/>
