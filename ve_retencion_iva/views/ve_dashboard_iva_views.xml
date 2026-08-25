@@ -306,28 +306,6 @@
                                     <list create="false" delete="false" edit="false" open="false"
                                           decoration-danger="estado_recepcion == 'vencido'"
                                           decoration-info="estado_recepcion == 'esperado'">
-                                        <button name="action_abrir_form"
-                                                string="Abrir" type="object" icon="fa-external-link"
-                                                class="btn-sm btn-link" title="Abrir comprobante"/>
-                                        <button name="action_abrir_registrar_llamada"
-                                                type="object" icon="fa-phone"
-                                                class="btn-sm btn-outline-primary"
-                                                title="Registrar llamada al contacto"/>
-                                        <button name="action_recordatorio_envio_comp"
-                                                type="object" icon="fa-envelope"
-                                                class="btn-sm btn-secondary"
-                                                title="Pedir env&#xED;o del comprobante"
-                                                invisible="not necesita_envio_comp"/>
-                                        <button name="action_recordatorio_dif_seniat"
-                                                type="object" icon="fa-exclamation-triangle"
-                                                class="btn-sm btn-warning"
-                                                title="Aclarar diferencia de monto con SENIAT"
-                                                invisible="not necesita_aclarar_dif_seniat"/>
-                                        <button name="action_recordatorio_rep_seniat"
-                                                type="object" icon="fa-flag"
-                                                class="btn-sm btn-danger"
-                                                title="El agente debe reportar la retenci&#xF3;n a SENIAT"
-                                                invisible="not necesita_reportar_seniat"/>
                                         <field name="partner_id" string="Cliente"/>
                                         <field name="invoice_name" string="Factura"/>
                                         <field name="nro_control" string="N&#xB0; Control" optional="hide"/>
@@ -355,6 +333,28 @@
                                         <field name="estado_declaracion" string="Declaraci&#xf3;n" widget="badge"
                                                decoration-muted="estado_declaracion == 'no_declarado'"
                                                decoration-success="estado_declaracion == 'declarado'"/>
+                                        <button name="action_abrir_form"
+                                                string="Abrir" type="object" icon="fa-external-link"
+                                                class="btn-sm btn-link" title="Abrir comprobante"/>
+                                        <button name="action_abrir_registrar_llamada"
+                                                type="object" icon="fa-phone"
+                                                class="btn-sm btn-outline-primary"
+                                                title="Registrar llamada al contacto"/>
+                                        <button name="action_recordatorio_envio_comp"
+                                                type="object" icon="fa-envelope"
+                                                class="btn-sm btn-secondary"
+                                                title="Pedir env&#xED;o del comprobante"
+                                                invisible="not necesita_envio_comp"/>
+                                        <button name="action_recordatorio_dif_seniat"
+                                                type="object" icon="fa-exclamation-triangle"
+                                                class="btn-sm btn-warning"
+                                                title="Aclarar diferencia de monto con SENIAT"
+                                                invisible="not necesita_aclarar_dif_seniat"/>
+                                        <button name="action_recordatorio_rep_seniat"
+                                                type="object" icon="fa-flag"
+                                                class="btn-sm btn-danger"
+                                                title="El agente debe reportar la retenci&#xF3;n a SENIAT"
+                                                invisible="not necesita_reportar_seniat"/>
                                     </list>
                                 </field>
                             </div>

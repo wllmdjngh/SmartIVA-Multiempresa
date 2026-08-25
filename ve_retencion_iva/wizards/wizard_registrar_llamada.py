@@ -107,10 +107,17 @@ class VeRegistrarLlamadaWizard(models.TransientModel):
         # Lista de Trabajo del Dashboard: lista_trabajo_ids (ve_dashboard_iva.py)
         # es un campo computado, no almacenado -- cerrar el wizard solo
         # refresca los valores de las filas ya conocidas, nunca vuelve a
-        # ejecutar el cómputo que decide qué retenciones aparecen. Se
-        # reabre el Dashboard desde cero (misma acción del menú) SOLO en
-        # ese caso -- en cualquier otro origen (Retenciones IVA Clientes,
-        # Visual IVA, Declaración IVA) el cierre simple ya funciona bien.
+        # ejecutar el cómputo que decide qué retenciones aparecen.
+        # 'reload' (tag de cliente, NO anidado dentro de otra acción) fuerza
+        # una recarga real SOLO en ese caso -- en cualquier otro origen
+        # (Retenciones IVA Clientes, Visual IVA, Declaración IVA) el cierre
+        # simple ya funciona bien. IMPORTANTE: nunca anidar una acción de
+        # seguimiento dentro de params.next de un display_notification --
+        # eso ya crasheó el webclient una vez, documentado y revertido por
+        # una demo (commit 50b4cb8, "Cannot read properties of undefined
+        # (reading 'map')" en _preprocessAction, 2026-07-15). Por eso acá
+        # se retorna 'reload' como única acción de nivel superior, nunca
+        # anidada.
         if self.env.context.get('ve_desde_lista_trabajo'):
-            return self.env['ve.dashboard.iva'].action_open_dashboard_operativo()
+            return {'type': 'ir.actions.client', 'tag': 'reload'}
         return {'type': 'ir.actions.act_window_close'}

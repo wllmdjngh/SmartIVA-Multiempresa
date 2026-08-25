@@ -95,13 +95,18 @@ class VeEnviarRecordatorioWizard(models.TransientModel):
         notificacion = self.wh_iva_id._enviar_recordatorio_tipo(
             self.tipo, cuerpo_override=self.mensaje, email_override=self.email,
             contacto_nombre=contacto.name if contacto else False)
-        # Cierra el pop-up tras mostrar el resultado. Igual que en
-        # wizard_registrar_llamada.py: si se abrió desde la Lista de Trabajo
-        # del Dashboard, act_window_close no basta (lista_trabajo_ids es
-        # computado/no almacenado) -- se reabre el Dashboard desde cero.
-        # En cualquier otro origen, cerrar simple ya funciona bien.
+        # Si se abrió desde la Lista de Trabajo del Dashboard, act_window_close
+        # no basta (lista_trabajo_ids es computado/no almacenado, ver mismo
+        # comentario en wizard_registrar_llamada.py) -- hace falta 'reload'.
+        # PERO nunca anidado dentro de params.next de este display_notification:
+        # eso ya crasheó el webclient una vez, documentado y revertido por una
+        # demo (commit 50b4cb8, "Cannot read properties of undefined
+        # (reading 'map')" en _preprocessAction, 2026-07-15) -- ese intento
+        # anidaba justo un ir.actions.act_window ahí mismo. Por eso acá se
+        # sacrifica el pop-up de confirmación en este caso puntual (la propia
+        # Lista de Trabajo actualizándose ya confirma que se envió) y se
+        # retorna 'reload' solo, sin anidar nada.
         if self.env.context.get('ve_desde_lista_trabajo'):
-            notificacion['params']['next'] = self.env['ve.dashboard.iva'].action_open_dashboard_operativo()
-        else:
-            notificacion['params']['next'] = {'type': 'ir.actions.act_window_close'}
+            return {'type': 'ir.actions.client', 'tag': 'reload'}
+        notificacion['params']['next'] = {'type': 'ir.actions.act_window_close'}
         return notificacion
