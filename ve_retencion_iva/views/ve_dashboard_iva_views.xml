@@ -309,15 +309,16 @@
                                         <field name="invoice_name" string="Factura"/>
                                         <field name="nro_control" string="N&#xB0; Control" optional="hide"/>
                                         <field name="payment_state" string="Estado Pago" widget="badge"
+                                               optional="hide"
                                                decoration-success="payment_state == 'paid'"
                                                decoration-info="payment_state == 'in_payment'"
                                                decoration-warning="payment_state == 'partial'"
                                                decoration-muted="payment_state == 'not_paid'"/>
                                         <field name="monto_retenido" string="Monto" sum="Total"/>
                                         <field name="periodo_retencion" string="Per&#xED;odo"/>
-                                        <field name="fecha_vencimiento_entrega" string="Fecha L&#xED;mite"/>
-                                        <field name="fecha_ultimo_recordatorio" string="&#xDA;ltimo Recordatorio"/>
-                                        <field name="fecha_ultima_llamada" string="&#xDA;ltima Llamada"/>
+                                        <field name="fecha_vencimiento_entrega" string="Fecha L&#xED;mite" optional="hide"/>
+                                        <field name="fecha_ultimo_recordatorio" string="&#xDA;ltimo Recordatorio" optional="hide"/>
+                                        <field name="fecha_ultima_llamada" string="&#xDA;ltima Llamada" optional="hide"/>
                                         <field name="estado_recepcion" string="Recepci&#xf3;n" widget="badge"
                                                decoration-muted="estado_recepcion == 'esperado'"
                                                decoration-info="estado_recepcion in ('recibido', 'recibido_dif')"

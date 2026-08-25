@@ -95,7 +95,10 @@ class VeEnviarRecordatorioWizard(models.TransientModel):
         notificacion = self.wh_iva_id._enviar_recordatorio_tipo(
             self.tipo, cuerpo_override=self.mensaje, email_override=self.email,
             contacto_nombre=contacto.name if contacto else False)
-        # Cierra el pop-up tras mostrar el resultado — mismo patrón simple que
-        # Llamada (act_window_close), que sí refresca la Lista de Trabajo.
-        notificacion['params']['next'] = {'type': 'ir.actions.act_window_close'}
+        # Cierra el pop-up tras mostrar el resultado. act_window_close NO
+        # basta -- lista_trabajo_ids (ve_dashboard_iva.py) es computado, no
+        # almacenado, y cerrar el wizard no vuelve a ejecutar ese cómputo
+        # (ver mismo comentario en wizard_registrar_llamada.py). 'reload'
+        # fuerza una recarga real.
+        notificacion['params']['next'] = {'type': 'ir.actions.client', 'tag': 'reload'}
         return notificacion

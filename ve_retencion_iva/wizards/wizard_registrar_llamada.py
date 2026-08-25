@@ -103,4 +103,9 @@ class VeRegistrarLlamadaWizard(models.TransientModel):
             subtype_xmlid='mail.mt_note',
         )
         self.wh_iva_id.fecha_ultima_llamada = ahora
-        return {'type': 'ir.actions.act_window_close'}
+        # 'ir.actions.act_window_close' NO basta acá: lista_trabajo_ids
+        # (ve_dashboard_iva.py) es un campo computado, no almacenado -- cerrar
+        # el wizard solo refresca los valores de las filas ya conocidas, nunca
+        # vuelve a ejecutar el cómputo que decide qué retenciones aparecen.
+        # 'reload' fuerza una recarga real de la acción completa.
+        return {'type': 'ir.actions.client', 'tag': 'reload'}
