@@ -130,7 +130,7 @@ class VeRegistrarLlamadaWizard(models.TransientModel):
                 'tag': 'display_notification',
                 'params': {
                     'title': 'Llamada registrada',
-                    'message': f'Se registró la llamada a {self.partner_id.name or "cliente"}.',
+                    'message': f'Se registró la llamada a {self.partner_id.name or "cliente"} en la bitácora',
                     'type': 'success',
                     'sticky': False,
                     'next': self.env['ve.dashboard.iva'].action_open_dashboard_operativo(),
