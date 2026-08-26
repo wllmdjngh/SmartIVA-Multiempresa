@@ -1774,7 +1774,8 @@ class VeConectaCargaVentas(models.Model):
         # cada línea -- no hay que rastrear listas nuevas durante el bucle
         # de arriba).
         rechazadas_lineas = self.linea_ids.filtered(lambda l: not l.invoice_id)
-        CATEGORIA_LABEL = dict(self._fields['categoria_discrepancia'].selection)
+        CATEGORIA_LABEL = dict(
+            self.env['ve.conecta.carga.ventas.linea']._fields['categoria_discrepancia'].selection)
         rechazadas_por_categoria = {}
         for linea in rechazadas_lineas:
             cat = linea.categoria_discrepancia or False
