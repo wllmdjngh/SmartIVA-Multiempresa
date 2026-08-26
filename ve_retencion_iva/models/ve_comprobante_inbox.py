@@ -236,6 +236,32 @@ class VeComprobanteInbox(models.Model):
         self.write({'estado': 'cerrado'})
         return {'type': 'ir.actions.client', 'tag': 'reload'}
 
+    def _separar_adjuntos_extra(self, atts_extra, log):
+        """Mueve cada adjunto además del primero a su propio registro nuevo
+        de Buzón y lo procesa independientemente (MEJORA-CANAL-04). Se
+        REASIGNA (no se copia) el `ir.attachment` al nuevo registro — si se
+        copiara, `self` seguiría teniendo todos los adjuntos originales y un
+        futuro "Re-intentar" volvería a separarlos de nuevo, duplicando
+        registros cada vez."""
+        for att in atts_extra:
+            nuevo = self.copy({
+                'estado':         'pendiente',
+                'wh_iva_id':      False,
+                'wh_iva_link_id': False,
+            })
+            att.sudo().write({'res_model': nuevo._name, 'res_id': nuevo.id})
+            nuevo.message_post(
+                body=Markup(
+                    'Comprobante separado autom&#xe1;ticamente de {origen} '
+                    '&#x2014; el mensaje original tra&#xed;a m&#xe1;s de un '
+                    'adjunto, cada uno se procesa como un comprobante '
+                    'independiente.'
+                ).format(origen=self._get_html_link()),
+                message_type='comment', subtype_xmlid='mail.mt_note',
+            )
+            log.append(f'  Adjunto "{att.name}" separado a registro id={nuevo.id}')
+            nuevo._do_procesar()
+
     def _do_procesar(self):
         self.ensure_one()
         log = [f'Email: {self.email_from}', f'Asunto: {self.email_asunto}', '']
@@ -266,6 +292,21 @@ class VeComprobanteInbox(models.Model):
             return
 
         log.append(f'Adjuntos imagen/PDF: {len(atts)}')
+
+        # MEJORA-CANAL-04: varios adjuntos en un mismo mensaje son
+        # comprobantes INDEPENDIENTES (pueden ser de compañías distintas en
+        # Multiempresa — un único canal atiende a varias compañías cliente a
+        # la vez) — antes el ciclo de OCR de abajo se detenía en el primer
+        # adjunto legible y descartaba el resto en silencio. Cada adjunto
+        # además del primero se separa a su propio registro de Buzón y se
+        # procesa de forma independiente; este registro (`self`) sigue el
+        # resto del método normalmente, mismo que si solo hubiera llegado uno.
+        if len(atts) > 1:
+            log.append(
+                f'{len(atts)} adjuntos detectados — cada uno se procesa como '
+                'un comprobante independiente (pueden ser de compañías distintas).')
+            self._separar_adjuntos_extra(atts[1:], log)
+            atts = atts[:1]
 
         ocr_data = None
         for att in atts:
