@@ -288,8 +288,15 @@ class WizardCargaSeniat(models.TransientModel):
         mapped = set(col_map.values())
         if 'rif_agente' not in mapped:
             raise UserError('Columna obligatoria faltante: RIF')
-        if 'nro_control' not in mapped:
-            raise UserError('Columna obligatoria faltante: N° Control')
+        # GAP-SENIAT-CTRL-01: N° Control puede venir legítimamente vacío
+        # fila por fila (algunas retenciones SENIAT no lo traen) — la
+        # conciliación en esos casos se hace por N° Documento. Exigir la
+        # columna N° Control siempre presente rechazaba de entrada archivos
+        # que solo traen N° Documento, aunque cada fila fuera identificable
+        # igual. Ahora basta con que exista al menos una de las dos.
+        if 'nro_control' not in mapped and 'nro_documento' not in mapped:
+            raise UserError(
+                'Columna obligatoria faltante: N° Control o N° Documento (al menos una)')
 
         errores = []
         vals_list = []
@@ -337,8 +344,13 @@ class WizardCargaSeniat(models.TransientModel):
             if not vals.get('rif_agente'):
                 errores.append(f'Fila {row_num}: RIF vacío — omitida')
                 continue
-            if not vals.get('nro_control'):
-                errores.append(f'Fila {row_num}: N° Control vacío — omitida')
+            # GAP-SENIAT-CTRL-01: N° Control vacío por sí solo NO es motivo
+            # de descarte -- ya sabemos que a veces SENIAT no lo trae y la
+            # conciliación se hace por N° Documento igual. Solo se omite si
+            # AMBOS identificadores faltan (fila sin forma de conciliar).
+            if not vals.get('nro_control') and not vals.get('nro_documento'):
+                errores.append(
+                    f'Fila {row_num}: N° Control y N° Documento vacíos — omitida')
                 continue
 
             vals_list.append(vals)

@@ -418,6 +418,23 @@ class VeDeclaracionIva(models.Model):
             rec.campo_90 = rec.campo_78 - rec.campo_74
             rec.saldo_nuevo_campo_54 = max(0.0, -rec.campo_90)
 
+    @api.onchange('wh_iva_clientes_ids')
+    def _onchange_wh_iva_clientes_ids(self):
+        """MEJORA-UX-03, 3er intento. Confirmado por RPC (write() real
+        sobre incluir_declaracion en Multiempresa 2026-08-26): el cómputo
+        de campo_66/_compute_reporte_seniat es 100% correcto -- el @api.depends
+        ya declara los paths correctos (ver comentario arriba). El síntoma
+        (el total no se refresca en un formulario SIN GUARDAR al togglear
+        C.66 en una fila) es de propagación del onchange del lado cliente,
+        no del cómputo. wh_iva_clientes_ids es related='conciliacion_id.wh_iva_ids'
+        con readonly=False -- un patrón atípico que el cliente web no
+        siempre reconoce como "tiene onchange" para recomputar campos
+        hermanos cuando cambia un sub-campo de una fila. Declarar este
+        onchange (vacío a propósito, el trabajo real ya lo hace el compute)
+        registra wh_iva_clientes_ids como disparador explícito ante el
+        cliente web."""
+        pass
+
     # ─────────────────────────────────────────────────────────────────────────
     # Acciones — IVA Proveedores
     # ─────────────────────────────────────────────────────────────────────────

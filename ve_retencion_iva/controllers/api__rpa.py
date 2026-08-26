@@ -249,6 +249,22 @@ class RpaController(http.Controller):
                 })
                 continue
 
+            # GAP-SENIAT-CTRL-01: antes solo se validaba que la clave
+            # 'nro_control' existiera en el JSON, no que tuviera contenido --
+            # una fila con nro_control='' se creaba igual, a diferencia del
+            # wizard manual (wizard_carga_seniat.py) que sí la descartaba.
+            # Mismo criterio unificado en los 2 canales: N° Control vacío
+            # por sí solo NO descarta (SENIAT a veces no lo trae y la
+            # conciliación se hace por N° Documento) -- solo se descarta si
+            # AMBOS identificadores faltan.
+            if not item.get('nro_control') and not item.get('nro_documento'):
+                errores.append({
+                    'index': i,
+                    'nro_control': item.get('nro_control'),
+                    'error': 'N° Control y N° Documento vacíos — sin forma de identificar la fila',
+                })
+                continue
+
             # Calcular periodo_retencion natural desde la fecha de la retención
             pr = _calc_periodo_retencion(
                 periodo, item.get('fecha'), item.get('periodo_retencion', ''))
