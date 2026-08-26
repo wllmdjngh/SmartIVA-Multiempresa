@@ -126,6 +126,7 @@
                                       decoration-success="estado_recepcion == 'confirmado'"
                                       decoration-info="estado_recepcion == 'recibido'">
                                     <field name="partner_id"          string="Cliente"        readonly="1"/>
+                                    <field name="ref"                 string="Referencia"     readonly="1" optional="hide"/>
                                     <field name="rif"                 string="RIF"            readonly="1" optional="show"/>
                                     <field name="fecha"               string="Fecha Rec."     readonly="1" optional="show"/>
                                     <field name="name"                string="N° Comprobante" readonly="1"/>
