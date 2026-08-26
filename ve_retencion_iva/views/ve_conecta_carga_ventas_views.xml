@@ -98,6 +98,7 @@
                 <field name="zona" optional="show"/>
                 <field name="nro_control"/>
                 <field name="nro_documento"/>
+                <field name="tipo_transaccion" string="Tipo TR" optional="show"/>
                 <field name="fecha"/>
                 <field name="base_16" sum="Total" optional="hide"/>
                 <field name="base_8" sum="Total" optional="hide"/>
@@ -245,11 +246,24 @@
                         <h1><field name="name" readonly="1"/></h1>
                     </div>
 
+                    <div class="alert alert-warning d-flex align-items-center" role="alert"
+                         groups="base.group_multi_company" invisible="estado == 'confirmado'">
+                        <i class="fa fa-building fa-2x me-3" title="Compañía"/>
+                        <div>
+                            <strong>Compañía: <field name="company_id" nolabel="1" readonly="1"
+                                                      class="d-inline fw-bold" options="{'no_open': True}"/></strong><br/>
+                            Verifique que esta es la compañía correcta ANTES de confirmar — las
+                            facturas y retenciones de esta carga se crean ahí, y el Libro de Ventas
+                            no trae ningún dato propio que permita detectar el error después.
+                        </div>
+                    </div>
+
                     <div class="alert alert-info" role="status" invisible="estado == 'confirmado'">
                         <strong>Columnas reconocidas:</strong> RIF &#183; Cliente &#183;
                         N&#176; Control &#183; N&#176; Factura &#183; Fecha &#183;
                         Base 16% &#183; Base 8% &#183; Exento/No Gravado &#183;
-                        Monto Retenido (opcional) &#183; Estado Pago (opcional, informativo).<br/>
+                        Monto Retenido (opcional) &#183; Estado Pago (opcional, informativo) &#183;
+                        Tipo de Transacci&#243;n (opcional, informativo).<br/>
                         Primera fila del archivo = encabezados. Formatos aceptados: CSV o XLSX.
                     </div>
 
@@ -271,7 +285,8 @@
 
                     <group>
                         <group>
-                            <field name="company_id" groups="base.group_multi_company" readonly="estado == 'confirmado'"/>
+                            <field name="company_id" groups="base.group_multi_company"
+                                   domain="[('active', '=', True)]" readonly="estado == 'confirmado'"/>
                             <field name="archivo" widget="binary" filename="archivo_nombre"
                                    readonly="estado == 'confirmado'"/>
                             <field name="archivo_nombre" invisible="1"/>
