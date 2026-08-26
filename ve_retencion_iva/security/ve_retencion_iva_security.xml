@@ -92,7 +92,7 @@
          Ventas" con SOLO Purolomo activa (sin cargas propias todavía),
          Odoo abría directo la única carga existente (de TEST) y el intento
          de leer sus líneas (que muestran el cliente vinculado) chocaba con
-         el ir.rule nativo de res.partner -- "Error de acceso" confuso que
+         el ir.rule nativo de res.partner — "Error de acceso" confuso que
          parecía un bug de datos pero era este gap de segregación. -->
     <record id="ve_conecta_carga_ventas_company_rule" model="ir.rule">
         <field name="name">ve.conecta.carga.ventas: multi-compañía</field>
