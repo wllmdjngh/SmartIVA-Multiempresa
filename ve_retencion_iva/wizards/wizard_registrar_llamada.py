@@ -108,16 +108,32 @@ class VeRegistrarLlamadaWizard(models.TransientModel):
         # es un campo computado, no almacenado -- cerrar el wizard solo
         # refresca los valores de las filas ya conocidas, nunca vuelve a
         # ejecutar el cómputo que decide qué retenciones aparecen.
-        # 'reload' (tag de cliente, NO anidado dentro de otra acción) fuerza
-        # una recarga real SOLO en ese caso -- en cualquier otro origen
-        # (Retenciones IVA Clientes, Visual IVA, Declaración IVA) el cierre
-        # simple ya funciona bien. IMPORTANTE: nunca anidar una acción de
-        # seguimiento dentro de params.next de un display_notification --
-        # eso ya crasheó el webclient una vez, documentado y revertido por
-        # una demo (commit 50b4cb8, "Cannot read properties of undefined
-        # (reading 'map')" en _preprocessAction, 2026-07-15). Por eso acá
-        # se retorna 'reload' como única acción de nivel superior, nunca
-        # anidada.
+        #
+        # Intentos previos documentados en este mismo archivo/commits:
+        #   1) 2026-07-15 (621d147..da6a512): 'next' anidado con un dict
+        #      MANUAL incompleto ({'view_mode': 'form'} sin 'views': [...])
+        #      -- crasheaba _preprocessAction con "Cannot read properties
+        #      of undefined (reading 'map')" (revertido en 50b4cb8, demo).
+        #   2) 2026-08-25 v19.0.2.14.148: 'reload' anidado en next -- no
+        #      confirmado si funcionaba (se probó junto a una regresión de
+        #      CSS que rompía la columna Cliente, imposible de aislar).
+        #   3) 2026-08-25 v19.0.2.14.150/151: 'reload' como retorno directo
+        #      (sin anidar) -- reportado que tampoco refrescó.
+        # Intento actual: notificación + 'next' con la acción COMPLETA que
+        # arma action_open_dashboard_operativo() (incluye 'views', el campo
+        # que le faltaba al dict de 2026-07-15) -- pendiente de confirmar
+        # en vivo, no se pudo verificar visualmente esta sesión (el
+        # navegador de pruebas no logró montar el cliente web de Odoo).
         if self.env.context.get('ve_desde_lista_trabajo'):
-            return {'type': 'ir.actions.client', 'tag': 'reload'}
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Llamada registrada',
+                    'message': f'Se registró la llamada a {self.partner_id.name or "cliente"}.',
+                    'type': 'success',
+                    'sticky': False,
+                    'next': self.env['ve.dashboard.iva'].action_open_dashboard_operativo(),
+                },
+            }
         return {'type': 'ir.actions.act_window_close'}
