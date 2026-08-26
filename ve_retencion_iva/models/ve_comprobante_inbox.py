@@ -164,6 +164,8 @@ class VeComprobanteInbox(models.Model):
             'nota_credito | otro",\n'
             '  "nro_comprobante": "número de 14 dígitos del comprobante o null",\n'
             '  "nro_control": "número de control formato 00-XXXXXXX o null",\n'
+            '  "nro_factura": "número de factura o documento (solo dígitos) o null '
+            '— úsalo cuando el documento no traiga N° de Control",\n'
             '  "rif_agente": "RIF del agente de retención (quien retiene, el cliente '
             'que emite el comprobante) formato J-XXXXXXXX-X o null",\n'
             '  "nombre_agente": "razón social del agente de retención o null",\n'
@@ -371,6 +373,7 @@ class VeComprobanteInbox(models.Model):
             return
 
         nro_control     = _f('nro_control')
+        nro_factura     = _f('nro_factura')
         rif             = _f('rif_agente')
         nro_comp        = _f('nro_comprobante')
         nombre_agente   = _f('nombre_agente')
@@ -388,6 +391,7 @@ class VeComprobanteInbox(models.Model):
             f'Canal recepción: {self.canal_origen}',
             f'Archivo(s):      {att_nombres}',
             f'N° Control:      {nro_control or "(no detectado)"}',
+            f'N° Factura:      {nro_factura or "(no detectado)"}',
             f'RIF Agente:      {rif or "(no detectado)"}',
             f'Nombre Agente:   {nombre_agente or "(no detectado)"}',
             f'Sujeto Retenido: {sujeto_nombre or "(no detectado)"} '
@@ -412,15 +416,22 @@ class VeComprobanteInbox(models.Model):
             'ocr_monto_retenido':  monto,
         })
 
+        # ── ¿Es multiempresa? ────────────────────────────────────────────────
+        # Solo tiene sentido acotar por compañía detectada cuando hay más de
+        # una compañía activa entre las que se pueda confundir. Con 1 sola
+        # compañía real (Cementos, Vencement, QA general), todo el bloque de
+        # abajo que depende de `es_multiempresa` queda inactivo y el
+        # comportamiento es idéntico al de siempre.
+        es_multiempresa = self.env['res.company'].sudo().search_count(
+            [('active', '=', True)]) > 1
+
         # ── Detección de compañía por Sujeto Retenido ───────────────────────
         # El comprobante trae el RIF/nombre de la propia empresa (la que está
         # SIENDO retenida), distinto del "agente de retención" (el cliente
         # que retiene). En un despacho contable con varias compañías cliente
         # recibiendo por un ÚNICO canal, esto es lo único que permite saber a
         # qué compañía pertenece el comprobante ANTES de intentar cualquier
-        # match — no depender de que el match con ve.wh.iva tenga éxito (si
-        # falla, o si hay ambigüedad de RIF, el registro se quedaba con la
-        # compañía por defecto de la sesión que lo creó, típicamente DJCS).
+        # match.
         empresa_detectada = self.env['res.company']
         if sujeto_rif:
             rif_emp_c = re.sub(r'[-\s]', '', sujeto_rif).upper()
@@ -443,89 +454,130 @@ class VeComprobanteInbox(models.Model):
                 'Sujeto Retenido: no se pudo detectar la compañía por RIF/nombre '
                 '— se mantiene la compañía con la que se creó el registro.')
 
+        # MEJORA-CANAL-04 (Multiempresa, 2026-08-26): si hay más de una
+        # compañía activa y no se pudo detectar a cuál pertenece este
+        # comprobante, NO se busca la retención cruzando compañías — bug real
+        # encontrado probando esta mejora: un mismo RIF+N°Control de prueba
+        # existía en 2 compañías distintas (cada una con su propio contacto
+        # "duplicado" del mismo cliente) y el match elegía la equivocada en
+        # silencio. Mejor dejarlo explícito para revisión manual que adivinar.
+        if es_multiempresa and not empresa_detectada:
+            log.append(
+                'Multiempresa sin compañía detectada — no se busca la '
+                'retención cruzando compañías, para evitar vincular a la '
+                'incorrecta. Revisar manualmente.')
+            msg_inbox = self.message_post(
+                body=Markup(
+                    'Multiempresa: no se pudo detectar la compa&#241;&#237;a '
+                    'por Sujeto Retenido &#x2014; no se busca la retenci&#243;n '
+                    'cruzando compa&#241;&#237;as. Revisar y vincular '
+                    'manualmente.<br/>Archivo: <b>{archivo}</b>'
+                ).format(archivo=escape(att_nombres)),
+                message_type='comment', subtype_xmlid='mail.mt_note',
+            )
+            if msg_inbox and atts:
+                msg_inbox.sudo().write({'attachment_ids': [(4, a.id) for a in atts]})
+            self._save_log(log, 'sin_match')
+            return
+
         # ── Match con retención existente ────────────────────────────────
-        # Regla: si el OCR detectó tanto RIF como N° Control, deben coincidir
-        # LOS DOS a la vez con la misma retención (no basta con uno solo) —
-        # evita el caso real de un cliente con 2+ retenciones pendientes donde
-        # el N° Control por sí solo (sin cruzar contra el RIF) podía traer la
-        # equivocada, o donde un N° Control mal leído por OCR coincidiera por
-        # casualidad con el de otro agente.
-        # sudo(): un despacho contable puede recibir por un ÚNICO WhatsApp/email
-        # los comprobantes de VARIAS compañías cliente a la vez — en ese caso
-        # no sabemos todavía a qué compañía pertenece este mensaje, así que el
-        # match tiene que poder ENCONTRAR la retención sin importar en qué
-        # compañía esté (no se puede filtrar por company_id antes de saber
-        # cuál es). Sin sudo(), el ir.rule de company_id podría filtrar en
-        # silencio las compañías fuera de las "Compañías permitidas" del
-        # usuario/proceso que ejecuta este método, y una retención real de
-        # otra compañía nunca aparecería en el match (falso "sin_match").
+        # Regla: si el OCR detectó tanto RIF como un identificador de
+        # documento (N° Control, o N° Factura cuando no hay Control — mismo
+        # criterio de "Nivel 2" que ya usa la conciliación SENIAT en
+        # ve_conciliacion.py::_do_conciliar), deben coincidir LOS DOS a la vez
+        # con la misma retención (no basta con uno solo) — evita el caso real
+        # de un cliente con 2+ retenciones pendientes donde el identificador
+        # por sí solo (sin cruzar contra el RIF) podía traer la equivocada.
+        # RIF solo, sin Control ni Factura, ya NO alcanza para auto-vincular
+        # (2026-08-26) — queda para revisión manual en vez de adivinar entre
+        # las retenciones pendientes del contacto.
+        #
+        # sudo(): fuera de Multiempresa (o cuando ya se descartó arriba el
+        # caso "sin compañía detectada") el match tiene que poder ENCONTRAR la
+        # retención sin importar en qué compañía esté — sin sudo(), el
+        # ir.rule de company_id podría filtrar en silencio las compañías
+        # fuera de las "Compañías permitidas" del usuario/proceso que ejecuta
+        # este método, y una retención real de otra compañía nunca aparecería
+        # en el match (falso "sin_match").
         WhIva = self.env['ve.wh.iva'].sudo()
         wh = self.env['ve.wh.iva']
 
-        # Sin filtro de compañía a propósito (mismo motivo documentado
-        # arriba), PERO excluyendo compañías ARCHIVADAS — bug real
-        # encontrado 2026-07-30: archivar una compañía (patrón estándar de
-        # este proyecto para "eliminar" una de prueba, ver
-        # feedback_odoo_bloqueos_por_contabilidad) no borra sus partners/
-        # retenciones, y sin este filtro seguían contando como match real
-        # para el chequeo de duplicado — un comprobante nuevo, legítimo,
-        # para la compañía activa recién creada salía "Posible Duplicado"
-        # contra datos de una compañía muerta.
+        # Excluye compañías archivadas — bug real encontrado 2026-07-30:
+        # archivar una compañía (patrón estándar de este proyecto para
+        # "eliminar" una de prueba, ver feedback_odoo_bloqueos_por_
+        # contabilidad) no borra sus partners/retenciones, y sin este filtro
+        # seguían contando como match real para el chequeo de duplicado.
+        _ACTIVA = ['|', ('company_id', '=', False), ('company_id.active', '!=', False)]
+
+        # MEJORA-CANAL-04: en Multiempresa, con compañía ya detectada
+        # (`empresa_detectada`, garantizado no-vacío acá porque el caso
+        # contrario ya cortó arriba), el contacto se busca SOLO dentro de esa
+        # compañía (o compartido, company_id=False) — nunca cruzando a otra.
+        # Fuera de Multiempresa este domain extra queda vacío: la búsqueda de
+        # contacto de abajo es idéntica a la de siempre.
+        _domain_empresa = (
+            ['|', ('company_id', '=', False), ('company_id', '=', empresa_detectada.id)]
+            if (es_multiempresa and empresa_detectada) else []
+        )
+
         partner = self.env['res.partner']
         if rif:
             rif_c = re.sub(r'[-\s]', '', rif).upper()
             partner = self.env['res.partner'].sudo().search(
                 ['|', ('company_id', '=', False), ('company_id.active', '!=', False),
-                 ('vat', '!=', False)], limit=0,
+                 ('vat', '!=', False)] + _domain_empresa, limit=0,
             ).filtered(
                 lambda p: re.sub(r'[-\s]', '', p.vat or '').upper() == rif_c
             )[:1]
 
-        # Excluye compañías archivadas — mismo motivo que el filtro de
-        # partner de arriba (ver comentario ahí).
-        _ACTIVA = ['|', ('company_id', '=', False), ('company_id.active', '!=', False)]
+        # Identificador de documento: N° Control si vino, si no N° Factura
+        # (mismo criterio de "Nivel 2" que ya usa la conciliación SENIAT en
+        # ve_conciliacion.py::_do_conciliar). RIF solo, sin ninguno de los
+        # dos, ya NO alcanza para auto-vincular (2026-08-26, pedido explícito
+        # — aplica siempre, no solo en Multiempresa) — queda para revisión
+        # manual en vez de adivinar entre las retenciones pendientes del
+        # contacto.
+        if nro_control:
+            id_label, dom_identificador = 'N° Control', [('nro_control', '=', nro_control)]
+        elif nro_factura:
+            # nro_factura_match (ve_wh_iva.py) no es un campo `store=True` —
+            # no se puede buscar directo por ORM. Se busca por los 2 campos
+            # reales que ese compute resume: invoice_id.name (si hay factura
+            # vinculada) o nro_documento (entrada manual/OCR), lo que haya.
+            id_label = 'N° Factura'
+            dom_identificador = ['|', ('invoice_id.name', '=', nro_factura),
+                                       ('nro_documento', '=', nro_factura)]
+        else:
+            id_label, dom_identificador = None, None
 
-        ambiguo_rif = False
-        if nro_control and partner:
+        # Nota: `_domain_empresa` ya queda vacío ([]) fuera de Multiempresa —
+        # las 2 búsquedas de abajo son las únicas que cambian según el caso;
+        # el resto de la lógica (identificador obligatorio) es igual siempre.
+        if dom_identificador and partner:
             # Ambos datos disponibles: deben coincidir juntos.
-            wh = WhIva.search([
-                ('nro_control', '=', nro_control),
+            wh = WhIva.search(dom_identificador + [
                 ('partner_id', '=', partner.id),
                 ('state', 'in', ('esperado', 'vencido')),
                 ('estado_declaracion', '=', 'no_declarado'),
-            ] + _ACTIVA, limit=1)
+            ] + _ACTIVA + _domain_empresa, limit=1)
             if wh:
-                log.append(f'Match N° Control + RIF → {partner.name}')
+                log.append(f'Match {id_label} + RIF → {partner.name}')
             else:
                 log.append(
-                    f'N° Control "{nro_control}" no encontrado para el RIF {rif} '
-                    '— no se adivina por uno solo de los dos.')
-        elif nro_control and not rif:
-            # Solo N° Control disponible (RIF no detectado por OCR) — único dato para buscar.
-            wh = WhIva.search([
-                ('nro_control', '=', nro_control),
+                    f'{id_label} "{nro_control or nro_factura}" no encontrado '
+                    f'para el RIF {rif} — no se adivina por uno solo de los dos.')
+        elif dom_identificador and not rif:
+            # Solo identificador disponible (RIF no detectado por OCR).
+            wh = WhIva.search(dom_identificador + [
                 ('state', 'in', ('esperado', 'vencido')),
                 ('estado_declaracion', '=', 'no_declarado'),
-            ] + _ACTIVA, limit=1)
+            ] + _ACTIVA + _domain_empresa, limit=1)
             if wh:
-                log.append(f'Match solo por N° Control (sin RIF detectado) → {wh.partner_id.name}')
-        elif not nro_control and partner:
-            # Solo RIF disponible (N° Control no detectado por OCR) — único dato para buscar,
-            # con resguardo de ambigüedad si el cliente tiene más de una retención pendiente.
-            candidatos = WhIva.search([
-                ('partner_id', '=', partner.id),
-                ('state', 'in', ('esperado', 'vencido')),
-                ('estado_declaracion', '=', 'no_declarado'),
-            ] + _ACTIVA, order='id desc')
-            if len(candidatos) == 1:
-                wh = candidatos
-                log.append(f'Match solo por RIF (sin N° Control detectado) → {partner.name}')
-            elif len(candidatos) > 1:
-                ambiguo_rif = True
-                log.append(
-                    f'RIF → {partner.name} tiene {len(candidatos)} retenciones '
-                    f'pendientes ({", ".join(candidatos.mapped("nro_control"))}) — '
-                    'ambiguo sin N° Control, no se puede elegir automáticamente.')
+                log.append(f'Match solo por {id_label} (sin RIF detectado) → {wh.partner_id.name}')
+        elif not dom_identificador and rif:
+            log.append(
+                'Solo RIF detectado (sin N° Control ni N° Factura) — no se '
+                'auto-vincula, requiere revisión manual.')
 
         if wh:
             # La retención encontrada es la que determina a qué compañía
@@ -558,36 +610,23 @@ class VeComprobanteInbox(models.Model):
                 self._save_log(log, 'con_diferencias', wh_iva_id=wh.id)
             else:
                 self._save_log(log, 'procesado', wh_iva_id=wh.id)
-        elif ambiguo_rif:
-            msg_inbox = self.message_post(
-                body=Markup(
-                    '&#x26A0; <b>Varias retenciones pendientes para este RIF</b> — '
-                    'no se pudo identificar cu&#225;l por N&#xba; Control (no detectado o '
-                    'sin coincidencia exacta). Revisar y vincular manualmente.<br/>'
-                    'Archivo: <b>{archivo}</b>'
-                ).format(archivo=escape(att_nombres)),
-                message_type='comment', subtype_xmlid='mail.mt_note',
-            )
-            if msg_inbox and atts:
-                msg_inbox.sudo().write({'attachment_ids': [(4, a.id) for a in atts]})
-            self._save_log(log, 'sin_match')
         else:
             # ── Detección de posible duplicado ────────────────────────────
-            # Mismo N° Control/RIF, pero en un estado que ya NO es esperado/vencido
-            # (ya recibido/confirmado/etc.) — la retención ya tiene su comprobante,
-            # esto que llegó ahora es casi con seguridad un reenvío duplicado.
-            # Mismo criterio que el match principal: si hay RIF y N° Control, deben
-            # coincidir los dos a la vez (reusa el `partner` ya resuelto arriba).
+            # Mismo identificador/RIF, pero en un estado que ya NO es
+            # esperado/vencido (ya recibido/confirmado/etc.) — la retención ya
+            # tiene su comprobante, esto que llegó ahora es casi con seguridad
+            # un reenvío duplicado. Mismo criterio que el match principal
+            # (identificador+RIF, acotado a la compañía detectada cuando
+            # aplica — MEJORA-CANAL-04: un comprobante nunca se marca
+            # "duplicado" contra una retención de OTRA compañía).
             wh_dup = self.env['ve.wh.iva']
-            if nro_control and partner:
+            if dom_identificador and partner:
                 wh_dup = WhIva.search(
-                    [('nro_control', '=', nro_control), ('partner_id', '=', partner.id)]
-                    + _ACTIVA, limit=1)
-            elif nro_control and not rif:
-                wh_dup = WhIva.search([('nro_control', '=', nro_control)] + _ACTIVA, limit=1)
-            elif not nro_control and partner:
+                    dom_identificador + [('partner_id', '=', partner.id)]
+                    + _ACTIVA + _domain_empresa, limit=1)
+            elif dom_identificador and not rif:
                 wh_dup = WhIva.search(
-                    [('partner_id', '=', partner.id)] + _ACTIVA, limit=1, order='id desc')
+                    dom_identificador + _ACTIVA + _domain_empresa, limit=1)
 
             if wh_dup and wh_dup.declarado_sin_comprobante and not wh_dup.comp_monto_retenido:
                 # No es un reenvío duplicado: es "Declarado sin Comprobante"
@@ -632,7 +671,7 @@ class VeComprobanteInbox(models.Model):
                 body=Markup(
                     'Sin match autom&#xe1;tico &#x2014; comprobante recibido '
                     'pero no se encontr&#xf3; una retenci&#xf3;n pendiente con '
-                    'ese N&#xb0; Control/RIF.<br/>Archivo: <b>{archivo}</b>'
+                    'ese N&#xb0; Control/Factura/RIF.<br/>Archivo: <b>{archivo}</b>'
                 ).format(archivo=escape(att_nombres)),
                 message_type='comment',
                 subtype_xmlid='mail.mt_note',
