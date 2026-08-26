@@ -83,4 +83,39 @@
         <field name="domain_force">['|', ('conciliacion_id', '=', False), ('conciliacion_id.company_id', 'in', company_ids)]</field>
     </record>
 
+    <!-- Gap real encontrado 2026-08-26 (Multiempresa, Purolomo): estos 4
+         modelos de CONECTA-14 (wizard de carga Ventas/Compras) se
+         construyeron DESPUÉS del esfuerzo original de MULTI-01 y nunca
+         recibieron su ir.rule — cualquier usuario con el grupo gestor veía
+         y podía abrir las cargas de TODAS las compañías sin importar el
+         selector activo. Repro real: al abrir el menú "Carga Libro de
+         Ventas" con SOLO Purolomo activa (sin cargas propias todavía),
+         Odoo abría directo la única carga existente (de TEST) y el intento
+         de leer sus líneas (que muestran el cliente vinculado) chocaba con
+         el ir.rule nativo de res.partner -- "Error de acceso" confuso que
+         parecía un bug de datos pero era este gap de segregación. -->
+    <record id="ve_conecta_carga_ventas_company_rule" model="ir.rule">
+        <field name="name">ve.conecta.carga.ventas: multi-compañía</field>
+        <field name="model_id" ref="model_ve_conecta_carga_ventas"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="ve_conecta_carga_ventas_linea_company_rule" model="ir.rule">
+        <field name="name">ve.conecta.carga.ventas.linea: multi-compañía</field>
+        <field name="model_id" ref="model_ve_conecta_carga_ventas_linea"/>
+        <field name="domain_force">[('carga_id.company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="ve_conecta_carga_compras_company_rule" model="ir.rule">
+        <field name="name">ve.conecta.carga.compras: multi-compañía</field>
+        <field name="model_id" ref="model_ve_conecta_carga_compras"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
+    <record id="ve_conecta_carga_compras_linea_company_rule" model="ir.rule">
+        <field name="name">ve.conecta.carga.compras.linea: multi-compañía</field>
+        <field name="model_id" ref="model_ve_conecta_carga_compras_linea"/>
+        <field name="domain_force">[('carga_id.company_id', 'in', company_ids)]</field>
+    </record>
+
 </odoo>
