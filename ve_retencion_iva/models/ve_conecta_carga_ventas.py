@@ -413,9 +413,13 @@ class VeConectaCargaVentas(models.Model):
 
     name = fields.Char(string='Referencia', copy=False, readonly=True, default='Nueva Carga')
     company_id = fields.Many2one(
-        'res.company', string='Empresa', required=True,
+        'res.company', string='Empresa', required=True, readonly=True,
         default=lambda self: self.env.company, index=True,
-    )
+        help='Toma la compañía activa (principal) de su sesión al crear '
+             'esta carga — no se puede cambiar aquí (MULTI-08). Si '
+             'necesita cargar para otra compañía, cámbiela primero en el '
+             'selector de compañías de Odoo (arriba a la derecha) y '
+             'cree una carga nueva.')
     archivo = fields.Binary(string='Archivo (CSV/XLSX)', attachment=True)
     archivo_nombre = fields.Char(string='Nombre del Archivo')
     mes_archivo = fields.Char(

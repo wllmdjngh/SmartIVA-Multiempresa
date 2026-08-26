@@ -285,8 +285,7 @@
 
                     <group>
                         <group>
-                            <field name="company_id" groups="base.group_multi_company"
-                                   domain="[('active', '=', True)]" readonly="estado == 'confirmado'"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
                             <field name="archivo" widget="binary" filename="archivo_nombre"
                                    readonly="estado == 'confirmado'"/>
                             <field name="archivo_nombre" invisible="1"/>
