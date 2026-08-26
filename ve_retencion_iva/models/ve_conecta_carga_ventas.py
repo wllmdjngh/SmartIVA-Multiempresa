@@ -193,6 +193,31 @@ def _fecha_candidatos(val):
     return candidatos
 
 
+def _normalizar_tipo_transaccion(val):
+    """Normaliza el valor crudo de la columna Tipo de Transacción a los 3
+    códigos SENIAT (01 Factura Regular, 02 Nota de Débito, 03 Nota de
+    Crédito) — acepta el código numérico directo o el nombre en texto
+    (con o sin acentos/mayúsculas). Devuelve False si no reconoce nada,
+    en vez de adivinar. Insumo para AJUSTE-FISCAL-01/02 (ver REQUISITOS.md),
+    no bloquea ni reemplaza todavía la detección Registro+Anulación."""
+    s = (val or '').strip().upper()
+    s = ''.join(c for c in unicodedata.normalize('NFD', s)
+                if unicodedata.category(c) != 'Mn')
+    if s in ('01', '1'):
+        return '01'
+    if s in ('02', '2'):
+        return '02'
+    if s in ('03', '3'):
+        return '03'
+    if 'CREDITO' in s or s in ('NC',):
+        return '03'
+    if 'DEBITO' in s or s in ('ND',):
+        return '02'
+    if 'FACTURA' in s or 'REGULAR' in s:
+        return '01'
+    return False
+
+
 # Mapeo de encabezados reconocidos — CONECTA-13: columnas del Libro de Ventas
 # que el motor necesita (ver REQUISITOS.md sección 11, Bloque 1). Extender
 # esta lista con los sinónimos que use cada cliente real, en vez de construir
@@ -290,6 +315,13 @@ _HEADER_MAP = {
     'monto documento': 'total_documento',
     'impuesto iva': 'monto_iva', 'iva debito fiscal': 'monto_iva',
     'monto iva': 'monto_iva', 'iva debito': 'monto_iva',
+    # Tipo de Transacción SENIAT (01 Factura Regular, 02 Nota de Débito,
+    # 03 Nota de Crédito) — insumo para AJUSTE-FISCAL-01/02. Ver
+    # _normalizar_tipo_transaccion arriba para los valores aceptados.
+    'tipo de transaccion': 'tipo_transaccion', 'tipo transaccion': 'tipo_transaccion',
+    'tipo tr': 'tipo_transaccion', 'tipo trans': 'tipo_transaccion',
+    'cod transaccion': 'tipo_transaccion', 'codigo transaccion': 'tipo_transaccion',
+    'tipo doc seniat': 'tipo_transaccion', 'tipo documento seniat': 'tipo_transaccion',
 }
 
 # Segunda pasada de reconocimiento por frase ancla — mismo criterio que
@@ -678,6 +710,8 @@ class VeConectaCargaVentas(models.Model):
                         vals[field] = _parse_date(cell, self.formato_fecha) or False
                 elif field == 'rif':
                     vals[field] = _formatear_rif(str(cell).strip())
+                elif field == 'tipo_transaccion':
+                    vals[field] = _normalizar_tipo_transaccion(str(cell))
                 else:
                     vals[field] = str(cell).strip()
             # Formato "largo" (Base Imponible + % Alíc./IVA genéricos por
@@ -2328,6 +2362,16 @@ class VeConectaCargaVentasLinea(models.Model):
              'del Cliente (pestaña Retenciones IVA VE) al confirmar la '
              'carga. Sí y No prevalecen sobre blanco, y Sí prevalece sobre '
              'No — ver action_confirmar.')
+    tipo_transaccion = fields.Selection([
+        ('01', '01 - Factura Regular'),
+        ('02', '02 - Nota de Débito'),
+        ('03', '03 - Nota de Crédito'),
+    ], string='Tipo de Transacción (TR)',
+        help='Código SENIAT tal cual lo trae el archivo (ver '
+             '_normalizar_tipo_transaccion). Opcional e informativo por '
+             'ahora — insumo para AJUSTE-FISCAL-01/02 (Nota de Crédito/'
+             'Débito no ajustan la retención), todavía no conectado a esa '
+             'lógica ni a la detección Registro+Anulación existente.')
 
     partner_id = fields.Many2one(
         'res.partner', string='Cliente (match)',
