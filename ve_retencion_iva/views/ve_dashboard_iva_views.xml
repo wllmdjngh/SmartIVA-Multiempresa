@@ -307,6 +307,7 @@
                                           decoration-danger="estado_recepcion == 'vencido'"
                                           decoration-info="estado_recepcion == 'esperado'">
                                         <field name="partner_id" string="Cliente"/>
+                                        <field name="company_id" string="Compa&#xF1;&#xED;a" optional="hide"/>
                                         <field name="invoice_name" string="Factura"/>
                                         <field name="nro_control" string="N&#xB0; Control" optional="hide"/>
                                         <field name="payment_state" string="Estado Pago" widget="badge"
