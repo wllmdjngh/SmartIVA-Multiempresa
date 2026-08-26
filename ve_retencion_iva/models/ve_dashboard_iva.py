@@ -974,13 +974,25 @@ class VeDashboardIva(models.Model):
         # activas (envio_comp/dif_seniat/rep_seniat) — misma unión exacta que
         # antes calculaba a mano con la tabla de tokens de estado_visual,
         # ahora una sola fuente de verdad compartida con los botones.
+        #
+        # Bug real encontrado 2026-08-25 (Multiempresa): el 'order' original
+        # solo tenía 'fecha_vencimiento_entrega asc', sin desempate. Con 70
+        # retenciones vencidas el mismo día (caso real, TEST) y limit=10, un
+        # empate tan grande sin criterio de desempate hace que PostgreSQL NO
+        # garantice ni el orden ni la selección de esos 10 entre una consulta
+        # y otra -- cada escritura (ej. registrar una llamada) podía cambiar
+        # cuál retención cae en qué posición la próxima vez que se recalcula
+        # este compute, haciendo que el botón de una fila visual terminara
+        # escribiendo sobre una retención distinta a la que se veía en
+        # pantalla. 'id asc' como desempate hace la selección y el orden
+        # 100% estables entre llamadas.
         items = self.env['ve.wh.iva'].search([
             '|', '|',
             ('necesita_envio_comp', '=', True),
             ('necesita_aclarar_dif_seniat', '=', True),
             ('necesita_reportar_seniat', '=', True),
             ('company_id', '=', self.env.company.id),
-        ], order='fecha_vencimiento_entrega asc', limit=10)
+        ], order='fecha_vencimiento_entrega asc, id asc', limit=10)
         for rec in self:
             rec.lista_trabajo_ids = items
 
