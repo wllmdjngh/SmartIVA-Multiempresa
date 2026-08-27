@@ -265,24 +265,16 @@ class VeDashboardIva(models.Model):
         compute='_compute_posicion_neta', store=False, digits=(16, 2))
     posicion_neta_periodo_label = fields.Char(
         compute='_compute_posicion_neta', store=False)
+    posicion_neta_periodo_pct = fields.Float(
+        compute='_compute_posicion_neta', store=False, digits=(5, 1))
     posicion_neta_ytd_bs = fields.Float(
         compute='_compute_posicion_neta', store=False, digits=(16, 2))
     posicion_neta_ytd_label = fields.Char(
         compute='_compute_posicion_neta', store=False)
-
-    # Brecha: información complementaria e independiente del KPI de arriba
-    # (Declarado vs. SENIAT) — cuánto crédito todavía podría entrar (No
-    # Recibido + Recibido sin Confirmar + Vencido, los 3 buckets de "Crédito
-    # del Período por Estado" que no son Confirmado/Recibido) y cómo pesa
-    # eso frente al Débito Fiscal.
-    brecha_pendiente_bs = fields.Float(
-        compute='_compute_brecha', store=False, digits=(16, 2))
-    brecha_pendiente_count = fields.Integer(
-        compute='_compute_brecha', store=False)
-    brecha_pendiente_pct = fields.Float(
-        compute='_compute_brecha', store=False, digits=(5, 1))
-    brecha_gauge_html = fields.Html(
-        compute='_compute_brecha', store=False, sanitize=False)
+    posicion_neta_ytd_pct = fields.Float(
+        compute='_compute_posicion_neta', store=False, digits=(5, 1))
+    posneta_svg_html = fields.Html(
+        compute='_compute_sparklines', store=False, sanitize=False)
 
     # ── KPI Nuevo: Excedente de Crédito Fiscal Acumulado ──────────────────────
     # "Trasladable actual" = campo_60 de la Declaración IVA del período
@@ -325,11 +317,14 @@ class VeDashboardIva(models.Model):
     concil_bar_html_ytd = fields.Html(
         compute='_compute_salud_conciliacion', store=False, sanitize=False)
 
-    # ── KPI 2: Recuperación de Crédito por Retención (antes "Tasa Efectiva
-    # de Retención") -- renombrado 2026-08-27, mismo cálculo, el nombre
-    # anterior sonaba a "% legal de retención" (75%/100%, ver
-    # porcentaje_retencion) cuando en realidad mide recuperación real de
-    # crédito confirmado sobre IVA Causado.
+    # ── KPI 2: Recuperación de Retenciones (antes "Tasa Efectiva de
+    # Retención") -- realineado 2026-08-27 con IOC (Índices IOC/TAC/BDS):
+    # Recibido (_serie_valor_recibido, monto real del comprobante) sobre
+    # Esperado/Base (_serie_valor_estimado, Retenciones Esperadas) -- antes
+    # usaba Confirmado/monto_retenido sobre IVA Causado TOTAL (todo el
+    # débito fiscal de ventas, incluya o no retención), inconsistente con
+    # IOC y con un denominador que diluía el % sin motivo. Esta tarjeta
+    # pasa a ser la versión Período+YTD de IOC (que solo existe en YTD).
     tasa_ef_periodo = fields.Float(
         string='Recuperación Período (%)', compute='_compute_tasa_ef', store=False, digits=(5, 1))
     tasa_ef_ytd = fields.Float(
@@ -340,13 +335,13 @@ class VeDashboardIva(models.Model):
     # Créd./Déb. Fiscal en Margen C/D — sin esto el % no se puede auditar
     # a simple vista (confundió a la usuaria con 1 solo comprobante 60k/75%).
     tasa_ef_retenido_periodo = fields.Float(
-        string='Retenido Confirmado Período (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
+        string='Recibido Período (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
     tasa_ef_causado_periodo = fields.Float(
-        string='IVA Causado Período (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
+        string='Esperado (Base) Período (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
     tasa_ef_retenido_ytd = fields.Float(
-        string='Retenido Confirmado YTD (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
+        string='Recibido YTD (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
     tasa_ef_causado_ytd = fields.Float(
-        string='IVA Causado YTD (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
+        string='Esperado (Base) YTD (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
 
     # ── KPI 3: Cumplimiento SPE ───────────────────────────────────────────────
     pct_cumpl_4q = fields.Float(
@@ -1398,23 +1393,16 @@ class VeDashboardIva(models.Model):
             seniat_y = sum(periodos_anio.mapped('total_seniat'))
             y = declarado_y - seniat_y
 
+            # Bug real 2026-08-27: 'Declarado &gt; SENIAT' se mostraba tal
+            # cual (con la entidad literal) -- este Char lo renderiza un
+            # <field> de texto plano, no un widget HTML, así que no
+            # decodifica entidades. Texto plano con '>' directo.
             rec.posicion_neta_periodo_bs = abs(p)
-            rec.posicion_neta_periodo_label = 'Declarado &gt; SENIAT' if p >= 0 else 'SENIAT &gt; Declarado'
+            rec.posicion_neta_periodo_label = 'Declarado > SENIAT' if p >= 0 else 'SENIAT > Declarado'
+            rec.posicion_neta_periodo_pct = (p / declarado_p * 100) if declarado_p else 0.0
             rec.posicion_neta_ytd_bs = abs(y)
-            rec.posicion_neta_ytd_label = 'Declarado &gt; SENIAT' if y >= 0 else 'SENIAT &gt; Declarado'
-
-    # ── Compute: Brecha (pendiente de confirmar, complementa Posición Neta) ──
-    # Misma fuente que "Retenciones s/Comprobante" en la Cascada de Liquidez
-    # (retenido_sin_periodo / retenido_sin_periodo_count / pct_en_riesgo_periodo)
-    # — un solo cálculo, para que la ficha KPI y la fila de la Cascada nunca
-    # se desincronicen.
-    @api.depends()
-    def _compute_brecha(self):
-        for rec in self:
-            rec.brecha_pendiente_bs = rec.retenido_sin_periodo
-            rec.brecha_pendiente_count = rec.retenido_sin_periodo_count
-            rec.brecha_pendiente_pct = rec.pct_en_riesgo_periodo
-            rec.brecha_gauge_html = rec._donut_html(rec.pct_en_riesgo_periodo)
+            rec.posicion_neta_ytd_label = 'Declarado > SENIAT' if y >= 0 else 'SENIAT > Declarado'
+            rec.posicion_neta_ytd_pct = (y / declarado_y * 100) if declarado_y else 0.0
 
     # ── Compute: Excedente de Crédito Fiscal Acumulado ────────────────────────
     @api.depends()
@@ -1537,7 +1525,16 @@ class VeDashboardIva(models.Model):
             buckets_ytd = rec._calc_concil_buckets(activos_ytd, seniat_ytd)
             rec.concil_bar_html_ytd = rec._conteo_donut_html(buckets_ytd)
 
-    # ── Compute: KPI 2 — Tasa Efectiva ────────────────────────────────────────
+    # ── Compute: KPI 2 — Recuperación de Retenciones ──────────────────────────
+    # Realineado 2026-08-27, pedido explícito: la versión anterior ("Tasa
+    # Efectiva de Retención") usaba Confirmado/monto_retenido (esperado)
+    # sobre IVA Causado TOTAL (todo el débito fiscal de ventas, incluya o no
+    # retención) -- denominador inconsistente con IOC (Índices IOC/TAC/BDS,
+    # más abajo en este mismo dashboard), que mide prácticamente lo mismo
+    # pero con Recibido/monto_recibido (real) sobre Retenciones Esperadas
+    # (_serie_valor_estimado). Ahora reusa esos 2 mismos helpers -- esta
+    # tarjeta pasa a ser la versión Período+YTD de IOC (que solo existe en
+    # YTD), sin duplicar criterio.
     @api.depends()
     def _compute_tasa_ef(self):
         today = fields.Date.today()
@@ -1545,55 +1542,27 @@ class VeDashboardIva(models.Model):
         for rec in self:
             rec.tasa_anio = today.year
 
-            # Período activo
             periodo = rec._get_periodo_activo()
             if periodo:
-                # Confirmados: tienen comprobante físico → numerador
-                conf_p = self.env['ve.wh.iva'].search([
-                    ('conciliacion_id', '=', periodo.id),
-                    ('estado_recepcion', 'in', ['confirmado', 'confirmado_dif']),
-                ])
-                # Denominador: todos los válidos del período, EXCLUYENDO los
-                # "esperado" cuyo plazo legal aún no vence — antes de esa
-                # fecha el cliente no está en incumplimiento, incluirlos
-                # solo genera ruido de calendario (baja/sube la tasa según
-                # cuántas facturas se emitieron recién, no según gestión).
-                todos_p = self.env['ve.wh.iva'].search([
-                    ('conciliacion_id', '=', periodo.id),
-                    ('state', '!=', 'anulado'),
-                    '|', ('state', '!=', 'esperado'),
-                         ('fecha_vencimiento_entrega', '<=', today),
-                ])
-                iva_p = sum(r.monto_iva + r.monto_iva_red for r in todos_p)
-                ret_p = sum(conf_p.mapped('monto_retenido'))
-                rec.tasa_ef_periodo = (ret_p / iva_p * 100) if iva_p > 0 else 0.0
-                rec.tasa_ef_retenido_periodo = ret_p
-                rec.tasa_ef_causado_periodo = iva_p
+                esperado_p = rec._serie_valor_estimado(periodo)
+                recibido_p = rec._serie_valor_recibido(periodo)
+                rec.tasa_ef_periodo = (recibido_p / esperado_p * 100) if esperado_p > 0 else 0.0
+                rec.tasa_ef_retenido_periodo = recibido_p
+                rec.tasa_ef_causado_periodo = esperado_p
             else:
                 rec.tasa_ef_periodo = 0.0
                 rec.tasa_ef_retenido_periodo = 0.0
                 rec.tasa_ef_causado_periodo = 0.0
 
-            # YTD
-            conf_y = self.env['ve.wh.iva'].search([
-                ('estado_recepcion', 'in', ['confirmado', 'confirmado_dif']),
-                ('conciliacion_id.fecha_inicio', '>=', year_start),
-                ('conciliacion_id.fecha_inicio', '<=', year_end),
+            periodos_anio = self.env['ve.conciliacion.periodo'].search([
+                ('fecha_fin', '>=', year_start), ('fecha_fin', '<=', year_end),
                 ('company_id', '=', self.env.company.id),
             ])
-            todos_y = self.env['ve.wh.iva'].search([
-                ('state', '!=', 'anulado'),
-                '|', ('state', '!=', 'esperado'),
-                     ('fecha_vencimiento_entrega', '<=', today),
-                ('conciliacion_id.fecha_inicio', '>=', year_start),
-                ('conciliacion_id.fecha_inicio', '<=', year_end),
-                ('company_id', '=', self.env.company.id),
-            ])
-            iva_y = sum(r.monto_iva + r.monto_iva_red for r in todos_y)
-            ret_y = sum(conf_y.mapped('monto_retenido'))
-            rec.tasa_ef_ytd = (ret_y / iva_y * 100) if iva_y > 0 else 0.0
-            rec.tasa_ef_retenido_ytd = ret_y
-            rec.tasa_ef_causado_ytd = iva_y
+            esperado_y = sum(rec._serie_valor_estimado(p) for p in periodos_anio)
+            recibido_y = sum(rec._serie_valor_recibido(p) for p in periodos_anio)
+            rec.tasa_ef_ytd = (recibido_y / esperado_y * 100) if esperado_y > 0 else 0.0
+            rec.tasa_ef_retenido_ytd = recibido_y
+            rec.tasa_ef_causado_ytd = esperado_y
 
     # ── Compute: KPI 3 — Cumplimiento SPE ────────────────────────────────────
     @api.depends()
@@ -1627,23 +1596,23 @@ class VeDashboardIva(models.Model):
         c49 = decl.campo_49 if decl else 0.0
         return (c39 / c49 * 100) if c49 > 0 else 0.0
 
+    def _serie_valor_declarado_seniat(self, periodo):
+        """Brecha % del KPI "Posición Declarado vs. SENIAT" para ESE
+        período -- mismo cálculo que _compute_posicion_neta (Campo 66
+        Declarado − total_seniat, sobre Declarado), para el sparkline de
+        tendencia."""
+        decl = periodo.declaracion_iva_id
+        declarado = decl.campo_66 if decl else 0.0
+        seniat = periodo.total_seniat
+        return ((declarado - seniat) / declarado * 100) if declarado else 0.0
+
     def _serie_valor_tasa_efectiva(self, periodo):
-        WH = self.env['ve.wh.iva']
-        confirmados = WH.search([
-            ('conciliacion_id', '=', periodo.id),
-            ('estado_recepcion', 'in', ['confirmado', 'confirmado_dif']),
-        ])
-        # Mismo criterio que _compute_tasa_ef: excluir "esperado" cuyo plazo
-        # legal aún no vence (solo relevante para el período activo, ya que
-        # en períodos cerrados todos los plazos ya pasaron hace tiempo).
-        todos = WH.search([
-            ('conciliacion_id', '=', periodo.id),
-            ('state', '!=', 'anulado'),
-            '|', ('state', '!=', 'esperado'),
-                 ('fecha_vencimiento_entrega', '<=', fields.Date.today()),
-        ])
-        iva = sum(r.monto_iva + r.monto_iva_red for r in todos)
-        return (sum(confirmados.mapped('monto_retenido')) / iva * 100) if iva > 0 else 0.0
+        """Recuperación % para ESE período -- mismo criterio realineado que
+        _compute_tasa_ef (Recibido/_serie_valor_recibido sobre Esperado/
+        _serie_valor_estimado, igual que IOC), para el sparkline de tendencia."""
+        esperado = self._serie_valor_estimado(periodo)
+        recibido = self._serie_valor_recibido(periodo)
+        return (recibido / esperado * 100) if esperado > 0 else 0.0
 
     def _serie_valor_cumplimiento(self, periodo):
         decl = periodo.declaracion_iva_id
@@ -1759,26 +1728,33 @@ class VeDashboardIva(models.Model):
         valores_margen = valores_de(self._serie_valor_margen_cd)
         valores_tasa = valores_de(self._serie_valor_tasa_efectiva)
         valores_cumpl = valores_de(self._serie_valor_cumplimiento)
+        valores_posneta = valores_de(self._serie_valor_declarado_seniat)
 
         geo_margen = self._serie_a_svg(valores_margen, **dims)
         geo_tasa = self._serie_a_svg(valores_tasa, **dims)
         geo_cumpl = self._serie_a_svg(valores_cumpl, **dims)
+        geo_posneta = self._serie_a_svg(valores_posneta, **dims)
 
         html_margen = self._sparkline_html(
             geo_margen, 'primary', dims['w'], dims['h'], labels,
             'Margen C/D', valores_margen, periodos_full)
         html_tasa = self._sparkline_html(
             geo_tasa, 'success', dims['w'], dims['h'], labels,
-            'Recuperación por Retención', valores_tasa, periodos_full,
+            'Recuperación de Retenciones', valores_tasa, periodos_full,
             hex_color='#5b9a55')
         html_cumpl = self._sparkline_html(
             geo_cumpl, 'warning', dims['w'], dims['h'], labels,
             'Puntualidad Fiscal', valores_cumpl, periodos_full)
+        html_posneta = self._sparkline_html(
+            geo_posneta, 'info', dims['w'], dims['h'], labels,
+            'Declarado vs. SENIAT', valores_posneta, periodos_full,
+            hex_color='#336666')
 
         for rec in self:
             rec.margen_svg_html = html_margen
             rec.tasa_svg_html = html_tasa
             rec.cumpl_svg_html = html_cumpl
+            rec.posneta_svg_html = html_posneta
 
     def _serie_valor_pendiente_total(self, periodo):
         """Monto retenido TOTAL Pendiente por Recibir (Eje 1 — el
@@ -2851,6 +2827,25 @@ class VeDashboardIva(models.Model):
             'target': 'current',
         }
 
+    def action_ver_seniat_periodo(self):
+        """Abre las retenciones SENIAT (ve.seniat.retencion) del período de
+        referencia -- reemplaza a "Ver Pendientes" en la tarjeta Declarado
+        vs. SENIAT (2026-08-27): deja explorar qué compone el Total SENIAT
+        que se compara contra el Campo 66 Declarado."""
+        if not self.periodo_ref_id:
+            return False
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Retenciones SENIAT',
+            'res_model': 've.seniat.retencion',
+            'view_mode': 'list,form',
+            'views': [
+                (self.env.ref('ve_retencion_iva.ve_seniat_retencion_view_list').id, 'list'),
+                (self.env.ref('ve_retencion_iva.ve_seniat_retencion_view_form').id, 'form'),
+            ],
+            'domain': [('conciliacion_id', '=', self.periodo_ref_id)],
+        }
+
     def action_ver_retenciones_anio(self):
         today = fields.Date.today()
         year_start, year_end = self._get_rango_ytd()
@@ -3079,19 +3074,6 @@ class VeDashboardIva(models.Model):
             'view_mode': 'form',
             'target': 'current',
         }
-
-    def action_ver_pendientes_confirmar_periodo(self):
-        # Mismo dominio que la brecha en _compute_brecha: todo lo que NO
-        # es Confirmado/Recibido del período (No Recibido + Recibido sin
-        # Confirmar + Vencido).
-        periodo = self._get_periodo_activo()
-        if not periodo:
-            return False
-        return self._action_recordatorios_lista(
-            f'Pendientes de Confirmar — {periodo.periodo_retencion}', [
-                ('conciliacion_id', '=', periodo.id),
-                ('state', 'in', ('esperado', 'vencido', 'borrador')),
-            ])
 
     def action_ver_retenciones_con_comprobante_periodo(self):
         # Mismo dominio que con_p en _compute_liquidez.
