@@ -43,10 +43,11 @@
                                     <field name="periodo_activo_name" readonly="1" nolabel="1"/>
                                 </span>
                             </h5>
-                            <h3 class="fw-bold mb-0 position-absolute top-50 start-50 translate-middle"
-                                groups="base.group_multi_company">
+                            <div class="fw-bold mb-0 position-absolute top-50 start-50 translate-middle"
+                                 style="background-color:#e9ecef; padding:4px 18px; border-radius:6px; font-size:2rem;"
+                                 groups="base.group_multi_company">
                                 <field name="company_id" readonly="1" nolabel="1" options="{'no_open': True}"/>
-                            </h3>
+                            </div>
                         </div>
                         <div class="row g-3 mb-4">
                             <!-- Días al cierre -->
@@ -389,7 +390,14 @@
                     <div class="o_form_sheet" style="max-width:100%;">
 
                         <!-- ══ KPIs Gerenciales ═════════════════════════════════ -->
-                        <h5 class="fw-bold text-uppercase text-muted mb-3 mt-2">KPIs Gerenciales</h5>
+                        <div class="position-relative mb-3 mt-2">
+                            <h5 class="fw-bold text-uppercase text-muted mb-0">KPIs Gerenciales</h5>
+                            <div class="fw-bold mb-0 position-absolute top-50 start-50 translate-middle"
+                                 style="background-color:#e9ecef; padding:4px 18px; border-radius:6px; font-size:2rem;"
+                                 groups="base.group_multi_company">
+                                <field name="company_id" readonly="1" nolabel="1" options="{'no_open': True}"/>
+                            </div>
+                        </div>
                         <div class="mb-4" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
 
                             <!-- KPI: Declarado (C.66) vs. SENIAT — antes "Posición Neta SENIAT" -->
@@ -414,29 +422,30 @@
                                         <div class="row g-0 text-center mb-2" style="min-height: 100px;">
                                             <div class="col-6 border-end">
                                                 <div class="x-small text-muted text-uppercase" style="font-size:0.7rem;">Per&#xed;odo</div>
-                                                <div class="fs-6 fw-bold" style="color:#336666;">
-                                                    <field name="posicion_neta_periodo_label" readonly="1" nolabel="1"/>
+                                                <div class="fs-4 fw-bold" style="color:#336666;">
+                                                    <field name="posicion_neta_periodo_pct" readonly="1" nolabel="1"/>%
                                                 </div>
-                                                <div class="fs-6 fw-bold" style="color:#336666;">
-                                                    Bs.<field name="posicion_neta_periodo_bs" readonly="1" nolabel="1"/>
-                                                    (<field name="posicion_neta_periodo_pct" readonly="1" nolabel="1"/>%)
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    Declarado: <field name="posicion_neta_declarado_periodo_bs" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    SENIAT: <field name="posicion_neta_seniat_periodo_bs" readonly="1" nolabel="1"/>
                                                 </div>
                                             </div>
                                             <div class="col-6">
                                                 <div class="x-small text-muted text-uppercase" style="font-size:0.7rem;">YTD</div>
-                                                <div class="fs-6 fw-bold" style="color:#336666;">
-                                                    <field name="posicion_neta_ytd_label" readonly="1" nolabel="1"/>
+                                                <div class="fs-4 fw-bold" style="color:#336666;">
+                                                    <field name="posicion_neta_ytd_pct" readonly="1" nolabel="1"/>%
                                                 </div>
-                                                <div class="fs-6 fw-bold" style="color:#336666;">
-                                                    Bs.<field name="posicion_neta_ytd_bs" readonly="1" nolabel="1"/>
-                                                    (<field name="posicion_neta_ytd_pct" readonly="1" nolabel="1"/>%)
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    Declarado: <field name="posicion_neta_declarado_ytd_bs" readonly="1" nolabel="1"/>
+                                                </div>
+                                                <div style="font-size:0.7rem;" class="text-muted">
+                                                    SENIAT: <field name="posicion_neta_seniat_ytd_bs" readonly="1" nolabel="1"/>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="text-center text-muted" style="font-size:0.7rem;">
-                                            C.66 Declarado &#x2212; Total SENIAT (reportado por tus clientes)
-                                        </div>
-                                        <div class="mt-2">
+                                        <div>
                                             <field name="posneta_svg_html" readonly="1" nolabel="1"/>
                                         </div>
                                         <div class="text-center text-muted mt-1" style="font-size:0.7rem;">
@@ -763,14 +772,17 @@
                                 <div class="row g-2 align-items-center text-center mt-2"
                                      invisible="ve_declarado_manual">
                                     <div class="col-md-4 text-start">
-                                        <span class="small fw-semibold text-uppercase" style="color:#336666;">Posici&#xf3;n Declarado vs. SENIAT</span>
-                                        <div class="small text-muted">C.66 Declarado &#x2212; Total SENIAT (reportado por tus clientes)</div>
+                                        <span class="small fw-semibold text-uppercase" style="color:#336666;">Declarado vs. SENIAT</span>
+                                        <div class="small text-muted">Campo 66</div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="rounded p-2" style="border:1px solid #336666;">
                                             <div class="fw-bold" style="color:#336666;">
-                                                <field name="posicion_neta_periodo_label" readonly="1" nolabel="1"/>: Bs.<field name="posicion_neta_periodo_bs" readonly="1" nolabel="1"/>
-                                                (<field name="posicion_neta_periodo_pct" readonly="1" nolabel="1"/>%)
+                                                <field name="posicion_neta_periodo_pct" readonly="1" nolabel="1"/>%
+                                            </div>
+                                            <div class="small text-muted">
+                                                Decl. <field name="posicion_neta_declarado_periodo_bs" readonly="1" nolabel="1"/> /
+                                                SENIAT <field name="posicion_neta_seniat_periodo_bs" readonly="1" nolabel="1"/>
                                             </div>
                                             <div class="mt-1">
                                                 <button type="object" name="action_ver_declaracion_iva"
@@ -783,8 +795,11 @@
                                     <div class="col-md-4">
                                         <div class="rounded p-2 bg-light" style="border:1px solid #336666;">
                                             <div class="fw-bold" style="color:#336666;">
-                                                <field name="posicion_neta_ytd_label" readonly="1" nolabel="1"/>: Bs.<field name="posicion_neta_ytd_bs" readonly="1" nolabel="1"/>
-                                                (<field name="posicion_neta_ytd_pct" readonly="1" nolabel="1"/>%)
+                                                <field name="posicion_neta_ytd_pct" readonly="1" nolabel="1"/>%
+                                            </div>
+                                            <div class="small text-muted">
+                                                Decl. <field name="posicion_neta_declarado_ytd_bs" readonly="1" nolabel="1"/> /
+                                                SENIAT <field name="posicion_neta_seniat_ytd_bs" readonly="1" nolabel="1"/>
                                             </div>
                                             <div class="mt-1">
                                                 <button type="object" name="action_ver_declaracion_iva"

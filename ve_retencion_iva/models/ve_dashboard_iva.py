@@ -261,18 +261,18 @@ class VeDashboardIva(models.Model):
     # reportaron al portal). Positivo = Declarado > SENIAT (riesgo, crédito
     # sin respaldo); negativo = SENIAT > Declarado (oportunidad, crédito sin
     # aprovechar).
-    posicion_neta_periodo_bs = fields.Float(
-        compute='_compute_posicion_neta', store=False, digits=(16, 2))
-    posicion_neta_periodo_label = fields.Char(
-        compute='_compute_posicion_neta', store=False)
     posicion_neta_periodo_pct = fields.Float(
         compute='_compute_posicion_neta', store=False, digits=(5, 1))
-    posicion_neta_ytd_bs = fields.Float(
+    posicion_neta_declarado_periodo_bs = fields.Float(
         compute='_compute_posicion_neta', store=False, digits=(16, 2))
-    posicion_neta_ytd_label = fields.Char(
-        compute='_compute_posicion_neta', store=False)
+    posicion_neta_seniat_periodo_bs = fields.Float(
+        compute='_compute_posicion_neta', store=False, digits=(16, 2))
     posicion_neta_ytd_pct = fields.Float(
         compute='_compute_posicion_neta', store=False, digits=(5, 1))
+    posicion_neta_declarado_ytd_bs = fields.Float(
+        compute='_compute_posicion_neta', store=False, digits=(16, 2))
+    posicion_neta_seniat_ytd_bs = fields.Float(
+        compute='_compute_posicion_neta', store=False, digits=(16, 2))
     posneta_svg_html = fields.Html(
         compute='_compute_sparklines', store=False, sanitize=False)
 
@@ -1393,15 +1393,15 @@ class VeDashboardIva(models.Model):
             seniat_y = sum(periodos_anio.mapped('total_seniat'))
             y = declarado_y - seniat_y
 
-            # Bug real 2026-08-27: 'Declarado &gt; SENIAT' se mostraba tal
-            # cual (con la entidad literal) -- este Char lo renderiza un
-            # <field> de texto plano, no un widget HTML, así que no
-            # decodifica entidades. Texto plano con '>' directo.
-            rec.posicion_neta_periodo_bs = abs(p)
-            rec.posicion_neta_periodo_label = 'Declarado > SENIAT' if p >= 0 else 'SENIAT > Declarado'
+            # Signo del % ya distingue la dirección (positivo = Declarado >
+            # SENIAT, negativo = SENIAT > Declarado) -- sin texto repetido,
+            # mismo criterio visual que Margen C/D (solo el % + los 2
+            # montos crudos debajo, nada de etiqueta aparte por columna).
+            rec.posicion_neta_declarado_periodo_bs = declarado_p
+            rec.posicion_neta_seniat_periodo_bs = seniat_p
             rec.posicion_neta_periodo_pct = (p / declarado_p * 100) if declarado_p else 0.0
-            rec.posicion_neta_ytd_bs = abs(y)
-            rec.posicion_neta_ytd_label = 'Declarado > SENIAT' if y >= 0 else 'SENIAT > Declarado'
+            rec.posicion_neta_declarado_ytd_bs = declarado_y
+            rec.posicion_neta_seniat_ytd_bs = seniat_y
             rec.posicion_neta_ytd_pct = (y / declarado_y * 100) if declarado_y else 0.0
 
     # ── Compute: Excedente de Crédito Fiscal Acumulado ────────────────────────
