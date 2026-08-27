@@ -562,8 +562,8 @@
                             context="{'group_by': 'company_id'}"
                             groups="base.group_multi_company"/>
                     <filter name="gb_conciliacion"
-                            string="Por Período Fiscal"
-                            context="{'group_by': 'periodo'}"/>
+                            string="Por Quincena"
+                            context="{'group_by': 'periodo_retencion'}"/>
                     <filter name="gb_partner"
                             string="Por Cliente"
                             context="{'group_by': 'partner_id'}"/>

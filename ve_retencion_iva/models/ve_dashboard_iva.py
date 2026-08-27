@@ -27,6 +27,22 @@ class VeDashboardIva(models.Model):
     ve_declarado_manual = fields.Boolean(
         compute='_compute_ve_declarado_manual', store=False)
 
+    # Informativo, no un dato propio del singleton (ve.dashboard.iva no
+    # tiene company_id — ver _get_or_create_singleton, un solo registro
+    # global) — refleja la compañía ACTIVA de la sesión en el momento en
+    # que se abre/refresca el Dashboard, la misma que ya usan todos los
+    # demás computes de este modelo (self.env.company.id) para filtrar
+    # sus datos. Pedido explícito 2026-08-27: mostrarla junto al título
+    # "Semáforo Operativo" para que quede claro de qué compañía son los
+    # números, sobre todo en Multiempresa (ver MULTI-06 — el Dashboard no
+    # combina varias compañías, solo muestra la activa).
+    company_id = fields.Many2one(
+        'res.company', compute='_compute_company_id', store=False)
+
+    def _compute_company_id(self):
+        for rec in self:
+            rec.company_id = self.env.company
+
     def _compute_ve_declarado_manual(self):
         manual = self.env.company.ve_declarado_manual
         for rec in self:
@@ -197,7 +213,7 @@ class VeDashboardIva(models.Model):
     margen_cd_periodo = fields.Float(
         string='Margen C/D Período', compute='_compute_margen_cd', store=False, digits=(5, 1))
     margen_cd_ytd = fields.Float(
-        string='Margen C/D Ene-Jun 2026', compute='_compute_margen_cd', store=False, digits=(5, 1))
+        string='Margen C/D YTD', compute='_compute_margen_cd', store=False, digits=(5, 1))
     # Nombre corregido 2026-07-21: este campo guarda campo_39 (Créditos
     # Fiscales), NUNCA guardó campo_66 — el nombre anterior (campo_66_periodo)
     # era incorrecto y confundió el diseño de Posición Neta (ver abajo).
@@ -206,9 +222,9 @@ class VeDashboardIva(models.Model):
     campo_49_periodo = fields.Float(
         string='Débito Fiscal Período (Bs)', compute='_compute_margen_cd', store=False, digits=(16, 0))
     credito_fiscal_ytd = fields.Float(
-        string='Crédito Fiscal Ene-Jun 2026 (Bs)', compute='_compute_margen_cd', store=False, digits=(16, 0))
+        string='Crédito Fiscal YTD (Bs)', compute='_compute_margen_cd', store=False, digits=(16, 0))
     campo_49_ytd = fields.Float(
-        string='Débito Fiscal Ene-Jun 2026 (Bs)', compute='_compute_margen_cd', store=False, digits=(16, 0))
+        string='Débito Fiscal YTD (Bs)', compute='_compute_margen_cd', store=False, digits=(16, 0))
     periodo_ref_id = fields.Integer(
         string='ID Período Ref', compute='_compute_margen_cd', store=False)
 
@@ -231,7 +247,7 @@ class VeDashboardIva(models.Model):
     c66_total_ytd_bs = fields.Float(
         compute='_compute_riesgo_declaracion', store=False, digits=(16, 2))
     c66_sin_confirmar_ytd_bs = fields.Float(
-        string='Declarado sin Comprobante Confirmado (Ene-Jun 2026)',
+        string='Declarado sin Comprobante Confirmado (YTD)',
         compute='_compute_riesgo_declaracion', store=False, digits=(16, 2))
     pct_c66_sin_confirmar_ytd = fields.Float(
         compute='_compute_riesgo_declaracion', store=False, digits=(5, 1))
@@ -316,7 +332,7 @@ class VeDashboardIva(models.Model):
     tasa_ef_periodo = fields.Float(
         string='Tasa Efectiva Período (%)', compute='_compute_tasa_ef', store=False, digits=(5, 1))
     tasa_ef_ytd = fields.Float(
-        string='Tasa Efectiva Ene-Jun 2026 (%)', compute='_compute_tasa_ef', store=False, digits=(5, 1))
+        string='Tasa Efectiva YTD (%)', compute='_compute_tasa_ef', store=False, digits=(5, 1))
     tasa_anio = fields.Integer(
         string='Año', compute='_compute_tasa_ef', store=False)
     # Montos crudos del cálculo (numerador/denominador), mismo patrón que
@@ -327,9 +343,9 @@ class VeDashboardIva(models.Model):
     tasa_ef_causado_periodo = fields.Float(
         string='IVA Causado Período (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
     tasa_ef_retenido_ytd = fields.Float(
-        string='Retenido Confirmado Ene-Jun 2026 (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
+        string='Retenido Confirmado YTD (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
     tasa_ef_causado_ytd = fields.Float(
-        string='IVA Causado Ene-Jun 2026 (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
+        string='IVA Causado YTD (Bs)', compute='_compute_tasa_ef', store=False, digits=(16, 0))
 
     # ── KPI 3: Cumplimiento SPE ───────────────────────────────────────────────
     pct_cumpl_4q = fields.Float(
@@ -440,18 +456,18 @@ class VeDashboardIva(models.Model):
         return periodo
 
     def _get_rango_ytd(self):
-        # Acotado a Ene-Jun 2026 (pedido explícito 2026-08-14) -- el Libro
-        # de Ventas cargado/validado de Cementos es ese rango fijo, no el
-        # año calendario completo hasta hoy. Julio 2026 ya tiene
-        # facturación real de uso corriente de Odoo, fuera del alcance de
-        # esta reconciliación -- mezclarla en cualquier KPI "YTD" lo
-        # contamina sin ser comparable contra el Excel del cliente.
-        # NOTA para la próxima vez que se cargue un libro más reciente
-        # (Jul-Dic 2026 u otro año): este rango fijo va a quedar
-        # desactualizado, hay que volver a ajustarlo -- no se hizo
-        # dinámico (today.replace(month=1,day=1)) a propósito, para no
-        # reintroducir la mezcla con datos fuera de alcance mientras tanto.
-        return date(2026, 1, 1), date(2026, 6, 30)
+        # Vuelto a dinámico 2026-08-27 -- el rango fijo Ene-Jun 2026
+        # (pedido puntual 2026-08-14 para no mezclar el Libro de Ventas
+        # validado de Cementos, capado a esos meses, con datos reales
+        # posteriores) quedó desactualizado exactamente como advertía el
+        # comentario original: en Multiempresa (data de agosto) dejaba
+        # todos los KPI "YTD" en 0 al caer fuera de esa ventana fija.
+        # Cementos está congelado desde el 16-ago (su Odoo.sh ya ni
+        # resuelve) y dejó de sincronizarse -- no hay ya ningún cliente
+        # activo que dependa del rango fijo, así que se revierte al
+        # cálculo dinámico real: 1 de enero del año en curso hasta hoy.
+        hoy = fields.Date.today()
+        return hoy.replace(month=1, day=1), hoy
 
     def _cumplimiento_en_rango(self, cutoff):
         # Total = todos los períodos en el rango (declarados o no)
@@ -1786,7 +1802,7 @@ class VeDashboardIva(models.Model):
     def _serie_cantidad_conciliado(self, periodo):
         """Cantidad de comprobantes conciliados en ESE período -- mismo
         universo/criterio que _serie_valor_conciliado (ver ahí), para el
-        tooltip "Cantidad/Monto" de RESUMEN Ene-Jun 2026 (pedido explícito
+        tooltip "Cantidad/Monto" de RESUMEN YTD (pedido explícito
         2026-08-22)."""
         WH = self.env['ve.wh.iva']
         return WH.search_count([
@@ -2004,14 +2020,16 @@ class VeDashboardIva(models.Model):
 
     @api.depends()
     def _compute_estimado_recibido(self):
-        ANIO = 2026
+        # Vuelto a dinámico 2026-08-27 -- el corte fijo a Jun (pedido
+        # puntual 2026-08-14 para no mezclar el Libro de Ventas validado
+        # de Cementos, capado a Ene-Jun, con facturación real posterior)
+        # quedó desactualizado: Cementos está congelado desde el 16-ago y
+        # dejó de sincronizarse, no hay ya ningún cliente activo que
+        # dependa del rango fijo. Mismo criterio que _get_rango_ytd().
+        hoy = fields.Date.today()
+        ANIO = hoy.year
         meses = self._serie_meses_anio(ANIO)
-        # Acotado a Ene-Jun (pedido explícito 2026-08-14): el Libro de
-        # Ventas cargado/validado de Cementos es Ene-Jun 2026 -- Julio ya
-        # tiene facturación real de uso corriente de Odoo (fuera del
-        # alcance de esta reconciliación), y mezclarla acá infla las
-        # barras sin ser comparable contra el Excel del cliente.
-        meses = [m for m in meses if m[0] <= f'{ANIO}-06']
+        meses = [m for m in meses if m[0] <= f'{ANIO}-{hoy.month:02d}']
         # h=340 (antes 240, subido de nuevo 2026-08-14) -- pedido explícito:
         # con 6 series, "Pendiente por Recibir" (la más chica casi siempre)
         # seguía perdiéndose de vista incluso con el aumento anterior
@@ -2349,7 +2367,7 @@ class VeDashboardIva(models.Model):
     def _fmt_miles_millones(self, v):
         """1234567890.4 → '1,23' (miles de millones = /1e9, 2 decimales,
         coma decimal venezolana) -- pedido explícito 2026-08-22 para la
-        etiqueta arriba de cada barra de RESUMEN Ene-Jun 2026 (el monto
+        etiqueta arriba de cada barra de RESUMEN YTD (el monto
         exacto en Bs sigue disponible en el tooltip)."""
         return f'{v / 1e9:.2f}'.replace('.', ',')
 
@@ -2406,7 +2424,7 @@ class VeDashboardIva(models.Model):
                 f'<div style="font-size:0.64rem; font-weight:700; color:#333; margin-bottom:2px; '
                 f'white-space:nowrap;">{monto_mm}</div>'
                 f'<div style="width:58px; height:{alto}px; background-color:{color}; '
-                f'border-radius:3px 3px 0 0;" title="{nombre} (Ene-Jun 2026): {cnt_txt}Bs.{self._fmt_monto(valor)}&#10;{explic}"></div>'
+                f'border-radius:3px 3px 0 0;" title="{nombre} (YTD): {cnt_txt}Bs.{self._fmt_monto(valor)}&#10;{explic}"></div>'
                 '</div>')
             etiquetas.append(
                 f'<span style="width:58px; text-align:center; overflow-wrap:break-word;">{nombre}</span>')
@@ -2424,18 +2442,19 @@ class VeDashboardIva(models.Model):
 
     @api.depends()
     def _compute_resumen_ytd(self):
-        ANIO = 2026
         company = self.env.company
-        # Acotado a Ene-Jun (mismo criterio que _compute_estimado_recibido,
-        # ver ahi el porque) -- bug encontrado 2026-08-16: este domain no
-        # tenia el limite superior, asi que Declarado y SENIAT del resumen
-        # sumaban tambien Julio (periodos 940/941, ya con datos reales de
-        # uso corriente de Odoo) mientras el grafico mensual correctamente
-        # los excluye -- las dos barras dejaban de cuadrar entre si.
+        # Vuelto a dinámico 2026-08-27, mismo criterio que _get_rango_ytd()
+        # (ver ahí el porqué) -- reusa ese método para que este resumen y
+        # el resto de los KPI "YTD" del Dashboard midan exactamente la
+        # misma ventana y nunca se descuadren entre sí. El límite superior
+        # explícito sigue siendo necesario (bug encontrado 2026-08-16: sin
+        # tope, Declarado/SENIAT sumaban también facturación real de uso
+        # corriente de Odoo fuera de la ventana YTD).
+        year_start, year_end = self._get_rango_ytd()
         periodos = self.env['ve.conciliacion.periodo'].search([
             ('company_id', '=', company.id),
-            ('periodo', '>=', f'{ANIO}-01'),
-            ('periodo', '<=', f'{ANIO}-06'),
+            ('periodo', '>=', f'{year_start.year:04d}-{year_start.month:02d}'),
+            ('periodo', '<=', f'{year_end.year:04d}-{year_end.month:02d}'),
         ])
         # Barra "Pendiente" QUITADA (pedido explícito 2026-08-22): tenía su
         # propia definición (_serie_valor_pendiente_total, esperado/vencido
