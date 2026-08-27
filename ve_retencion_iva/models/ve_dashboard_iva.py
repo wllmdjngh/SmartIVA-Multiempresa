@@ -2014,9 +2014,16 @@ class VeDashboardIva(models.Model):
         return f'<div>{leyenda}{svg}{labels_row}</div>'
 
     def _serie_meses_anio(self, anio):
-        """Períodos agrupados por mes ('YYYY-MM'), acotado a UN año --
-        pedido explícito 2026-08-07 para el gráfico Estimado/Recibido/
-        Pendiente/Declarado/SENIAT (año en curso, no todo el histórico)."""
+        """Los 12 meses del año calendario ('YYYY-MM'), con ancho de columna
+        fijo aunque todavía no existan períodos creados para algunos meses
+        (recordset vacío en ese caso -- sus series suman 0 automáticamente).
+        Antes devolvía solo los meses con períodos YA creados en Odoo
+        (pedido explícito 2026-08-07): eso hacía que el ancho de cada barra
+        del gráfico se recalculara cada vez que se cargaba un mes nuevo
+        (barras muy anchas al principio del año, con pocos meses cargados).
+        Fijo a 12 columnas desde 2026-08-27 para que el ancho no cambie
+        durante el año -- ver _compute_estimado_recibido para el mes en
+        curso, que se excluye de lo mostrado (dato parcial)."""
         periodos = self.env['ve.conciliacion.periodo'].search([
             ('company_id', '=', self.env.company.id),
             ('periodo', '=like', f'{anio}-%'),
@@ -2025,8 +2032,11 @@ class VeDashboardIva(models.Model):
         for p in periodos:
             por_mes.setdefault(p.periodo, self.env['ve.conciliacion.periodo'])
             por_mes[p.periodo] |= p
-        meses_ordenados = sorted(por_mes.keys())
-        return [(m, por_mes[m]) for m in meses_ordenados]
+        Empty = self.env['ve.conciliacion.periodo']
+        return [
+            (f'{anio}-{mes:02d}', por_mes.get(f'{anio}-{mes:02d}', Empty))
+            for mes in range(1, 13)
+        ]
 
     def _serie_valor_declarado_auto(self, periodo):
         """"Declarado" calculado desde Odoo (fallback cuando la compañía NO
@@ -2061,8 +2071,17 @@ class VeDashboardIva(models.Model):
         # dependa del rango fijo. Mismo criterio que _get_rango_ytd().
         hoy = fields.Date.today()
         ANIO = hoy.year
+        mes_actual_str = f'{ANIO}-{hoy.month:02d}'
+        # _serie_meses_anio ya devuelve los 12 meses del año (capacidad fija
+        # de columna, ver ahí) -- ya NO se trunca la lista acá. El mes en
+        # curso (mes_actual_str) sigue incluido en `meses` para que sus
+        # períodos SÍ cuenten en los totales YTD (base_ytd/IOC/TAC/BDS más
+        # abajo, igual que antes), pero se excluye más abajo de lo que se
+        # MUESTRA en el gráfico y en la tabla Riesgo de Sanción/
+        # Subdeclaración -- pedido explícito 2026-08-27: es un mes en
+        # curso, su dato está incompleto y distorsiona la comparación visual
+        # contra los meses ya cerrados.
         meses = self._serie_meses_anio(ANIO)
-        meses = [m for m in meses if m[0] <= f'{ANIO}-{hoy.month:02d}']
         # h=340 (antes 240, subido de nuevo 2026-08-14) -- pedido explícito:
         # con 6 series, "Pendiente por Recibir" (la más chica casi siempre)
         # seguía perdiéndose de vista incluso con el aumento anterior
@@ -2118,19 +2137,32 @@ class VeDashboardIva(models.Model):
             mes_label = self._mes_label_corto(mes_str)
             labels.append(mes_label)
             meses_full.append(mes_str)
+            # Mes en curso excluido de la tabla (dato parcial) -- pedido
+            # explícito 2026-08-27, ver comentario junto a mes_actual_str.
             excedente = round(declarado - recibido, 2)
-            if excedente > 0:
-                filas_sancion.append((mes_label, excedente))
-            elif excedente < 0:
-                filas_subdeclaracion.append((mes_label, -excedente))
+            if mes_str != mes_actual_str:
+                if excedente > 0:
+                    filas_sancion.append((mes_label, excedente))
+                elif excedente < 0:
+                    filas_subdeclaracion.append((mes_label, -excedente))
 
         colores = (self._COLOR_ESTIMADO, self._COLOR_RECIBIDO, self._COLOR_PENDIENTE,
                    self._COLOR_DECLARADO, self._COLOR_SENIAT, self._COLOR_CONCILIADO)
         nombres = ('Retenciones Esperadas', 'Recibido', 'Pendiente por Recibir',
                    'Declarado', 'Total SENIAT', 'Conciliado')
-        grupos, baseline_y = self._barras_n_series_geo(meses_valores, n_series=6, **dims)
+        # Copia con el mes en curso en cero SOLO para lo que se dibuja (el
+        # gráfico no muestra su dato parcial) -- meses_valores original
+        # (con el mes en curso real) se sigue usando abajo para base_ytd/
+        # IOC/TAC/BDS, que sí deben contar su aporte real. Meses futuros ya
+        # vienen en cero (sin períodos creados todavía), no hace falta
+        # tocarlos acá.
+        meses_valores_chart = [
+            (0.0,) * 6 if mes_str == mes_actual_str else valores
+            for mes_str, valores in zip(meses_full, meses_valores)
+        ]
+        grupos, baseline_y = self._barras_n_series_geo(meses_valores_chart, n_series=6, **dims)
         html = self._n_series_barras_html(
-            grupos, baseline_y, dims['w'], dims['h'], labels, meses_valores, meses_full,
+            grupos, baseline_y, dims['w'], dims['h'], labels, meses_valores_chart, meses_full,
             colores, nombres)
 
         riesgo_html = self._riesgo_subdeclaracion_html(filas_sancion, filas_subdeclaracion)
@@ -2211,7 +2243,8 @@ class VeDashboardIva(models.Model):
         """2 tablitas lado a lado (Riesgo de Sanción / Subdeclaración), una
         fila por mes en cada una -- pedido explícito 2026-08-10, reemplaza
         el total YTD agregado. Ambas listas ya vienen filtradas a los meses
-        con excedente != 0 (ver _compute_estimado_recibido)."""
+        con excedente != 0, y excluyen el mes en curso (dato parcial, ver
+        _compute_estimado_recibido)."""
         def _tabla(titulo, color, filas):
             if not filas:
                 filas_html = (
