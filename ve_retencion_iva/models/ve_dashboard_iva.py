@@ -252,16 +252,15 @@ class VeDashboardIva(models.Model):
     pct_c66_sin_confirmar_ytd = fields.Float(
         compute='_compute_riesgo_declaracion', store=False, digits=(5, 1))
 
-    # ── KPI Nuevo: Posición Neta SENIAT ───────────────────────────────────────
-    # Decisión 2026-07-21: espejo EXACTO del Campo 90 oficial de la Forma 030
-    # (ve.declaracion.iva.campo_90), no una aproximación aparte. Versión
-    # anterior recalculaba con campo_49 − créditos fiscales − solo
-    # retenciones YA CONFIRMADAS (con comprobante) — una lectura
-    # "conservadora" que en la práctica podía no coincidir con lo que
-    # realmente se declara al SENIAT, sobre todo con retenciones "Declaradas
-    # sin Comprobante" (cuentan en C.66 real pero no en esa aproximación).
-    # Mismo convenio de signo que el Campo 90: positivo = A Pagar (la
-    # empresa le debe a SENIAT), negativo = A Favor (excedente).
+    # ── KPI: Declarado (C.66) vs. SENIAT (antes "Posición Neta SENIAT") ──────
+    # Replanteado 2026-08-27 (ver _compute_posicion_neta para el detalle
+    # completo): la versión anterior (2026-07-21) era un espejo exacto del
+    # Campo 90 (ve.declaracion.iva.campo_90) -- 100% autoreferencial a la
+    # propia declaración, sin cruzar nada contra el SENIAT real. Ahora
+    # compara Campo 66 Declarado vs. total_seniat (lo que los clientes
+    # reportaron al portal). Positivo = Declarado > SENIAT (riesgo, crédito
+    # sin respaldo); negativo = SENIAT > Declarado (oportunidad, crédito sin
+    # aprovechar).
     posicion_neta_periodo_bs = fields.Float(
         compute='_compute_posicion_neta', store=False, digits=(16, 2))
     posicion_neta_periodo_label = fields.Char(
@@ -271,13 +270,11 @@ class VeDashboardIva(models.Model):
     posicion_neta_ytd_label = fields.Char(
         compute='_compute_posicion_neta', store=False)
 
-    # Brecha: Posición Neta SENIAT solo resta lo YA confirmado
-    # (retenido_con_periodo) — no depende de "Retenciones s/Comprobante".
-    # Esta es la contraparte visual: cuánto crédito todavía podría entrar
-    # (No Recibido + Recibido sin Confirmar + Vencido, los 3 buckets de
-    # "Crédito del Período por Estado" que no son Confirmado/Recibido) y
-    # cómo pesa eso frente al Débito Fiscal — para dimensionar cuánto
-    # podría todavía mover la Posición Neta si se confirma.
+    # Brecha: información complementaria e independiente del KPI de arriba
+    # (Declarado vs. SENIAT) — cuánto crédito todavía podría entrar (No
+    # Recibido + Recibido sin Confirmar + Vencido, los 3 buckets de "Crédito
+    # del Período por Estado" que no son Confirmado/Recibido) y cómo pesa
+    # eso frente al Débito Fiscal.
     brecha_pendiente_bs = fields.Float(
         compute='_compute_brecha', store=False, digits=(16, 2))
     brecha_pendiente_count = fields.Integer(
@@ -328,11 +325,15 @@ class VeDashboardIva(models.Model):
     concil_bar_html_ytd = fields.Html(
         compute='_compute_salud_conciliacion', store=False, sanitize=False)
 
-    # ── KPI 2: Tasa Efectiva de Retención ────────────────────────────────────
+    # ── KPI 2: Recuperación de Crédito por Retención (antes "Tasa Efectiva
+    # de Retención") -- renombrado 2026-08-27, mismo cálculo, el nombre
+    # anterior sonaba a "% legal de retención" (75%/100%, ver
+    # porcentaje_retencion) cuando en realidad mide recuperación real de
+    # crédito confirmado sobre IVA Causado.
     tasa_ef_periodo = fields.Float(
-        string='Tasa Efectiva Período (%)', compute='_compute_tasa_ef', store=False, digits=(5, 1))
+        string='Recuperación Período (%)', compute='_compute_tasa_ef', store=False, digits=(5, 1))
     tasa_ef_ytd = fields.Float(
-        string='Tasa Efectiva YTD (%)', compute='_compute_tasa_ef', store=False, digits=(5, 1))
+        string='Recuperación YTD (%)', compute='_compute_tasa_ef', store=False, digits=(5, 1))
     tasa_anio = fields.Integer(
         string='Año', compute='_compute_tasa_ef', store=False)
     # Montos crudos del cálculo (numerador/denominador), mismo patrón que
@@ -1230,9 +1231,17 @@ class VeDashboardIva(models.Model):
             # vence en la quincena SIGUIENTE a la retención, así que uno
             # del período activo nunca puede estar vencido mientras ese
             # período sigue corriendo.
+            #
+            # Bug real encontrado 2026-08-27 (Multiempresa): faltaba el
+            # límite SUPERIOR (periodo.fecha_fin) -- con solo la cota
+            # inferior, cuando _get_periodo_activo() cae al fallback (no
+            # hay período que contenga HOY, se usa el último no
+            # declarado, que puede tener fecha_inicio de meses atrás),
+            # esto sumaba TODO lo vencido desde ese inicio hasta hoy --
+            # varios meses/todo el año, no solo la ventana del período.
             aging_periodo = sum(
                 pendientes.filtered(
-                    lambda r: r.fecha_vencimiento_entrega >= periodo.fecha_inicio)
+                    lambda r: periodo.fecha_inicio <= r.fecha_vencimiento_entrega <= periodo.fecha_fin)
                 .mapped('monto_retenido')
             ) if periodo else 0.0
             rec.aging_periodo_bs = aging_periodo
@@ -1348,37 +1357,51 @@ class VeDashboardIva(models.Model):
             rec.c66_sin_confirmar_ytd_bs = sin_ytd
             rec.pct_c66_sin_confirmar_ytd = (sin_ytd / total_ytd * 100) if total_ytd > 0 else 0.0
 
-    # ── Compute: Posición Neta SENIAT ─────────────────────────────────────────
+    # ── Compute: Declarado (C.66) vs. SENIAT ──────────────────────────────────
+    # Replanteado 2026-08-27, pedido explícito: la versión anterior
+    # ("Posición Neta SENIAT") era un espejo del Campo 90 (Débito − Créditos
+    # de COMPRAS − Retenciones declaradas) -- 100% autoreferencial a la
+    # propia declaración de Odoo, sin cruzar nada contra el SENIAT real, pese
+    # al nombre. Caso real que motivó el cambio (Vencement): lo que de
+    # verdad quieren monitorear es CUÁNTO declararon en su Campo 66 (C.66 —
+    # Retenciones del Período) CONTRA cuánto sus clientes (agentes de
+    # retención) efectivamente reportaron al portal SENIAT por ellos
+    # (ve.conciliacion.periodo.total_seniat, ya usado en BDS de IOC/TAC/BDS
+    # pero ahí comparado contra "Esperadas", no contra lo REALMENTE
+    # declarado). Positivo = declarado MÁS de lo que el portal respalda
+    # (riesgo: crédito sin soporte SENIAT visible). Negativo = el portal
+    # tiene MÁS retenciones reportadas de las que se llegaron a declarar
+    # (oportunidad: crédito real sin aprovechar todavía).
     @api.depends()
     def _compute_posicion_neta(self):
         year_start, year_end = self._get_rango_ytd()
         for rec in self:
-            # Período: el mismo "último período con datos" que usa Margen
-            # C/D — espejo directo de su Campo 90, sin recalcular nada.
+            # Período: el mismo "último período con datos" que usa Margen C/D.
             ultimo = self.env['ve.conciliacion.periodo'].search([
                 ('estado', 'in', ['borrador', 'revision', 'aprobado', 'declarado']),
                 ('company_id', '=', self.env.company.id),
             ], order='fecha_fin desc', limit=1)
-            p = ultimo.declaracion_iva_id.campo_90 if ultimo and ultimo.declaracion_iva_id else 0.0
+            declarado_p = ultimo.declaracion_iva_id.campo_66 if ultimo and ultimo.declaracion_iva_id else 0.0
+            seniat_p = ultimo.total_seniat if ultimo else 0.0
+            p = declarado_p - seniat_p
 
-            # YTD: suma del Campo 90 de cada período del año — cada período
-            # es un evento real de pago/favor con el SENIAT (el arrastre ya
-            # queda contemplado dentro del propio Campo 90 de cada uno).
             periodos_anio = self.env['ve.conciliacion.periodo'].search([
                 ('estado', 'in', ['borrador', 'revision', 'aprobado', 'declarado']),
                 ('fecha_fin', '>=', year_start),
                 ('fecha_fin', '<=', year_end),
                 ('company_id', '=', self.env.company.id),
             ])
-            y = sum(
-                per.declaracion_iva_id.campo_90
+            declarado_y = sum(
+                per.declaracion_iva_id.campo_66
                 for per in periodos_anio if per.declaracion_iva_id
             )
+            seniat_y = sum(periodos_anio.mapped('total_seniat'))
+            y = declarado_y - seniat_y
 
             rec.posicion_neta_periodo_bs = abs(p)
-            rec.posicion_neta_periodo_label = 'A Pagar' if p >= 0 else 'A Favor'
+            rec.posicion_neta_periodo_label = 'Declarado &gt; SENIAT' if p >= 0 else 'SENIAT &gt; Declarado'
             rec.posicion_neta_ytd_bs = abs(y)
-            rec.posicion_neta_ytd_label = 'A Pagar' if y >= 0 else 'A Favor'
+            rec.posicion_neta_ytd_label = 'Declarado &gt; SENIAT' if y >= 0 else 'SENIAT &gt; Declarado'
 
     # ── Compute: Brecha (pendiente de confirmar, complementa Posición Neta) ──
     # Misma fuente que "Retenciones s/Comprobante" en la Cascada de Liquidez
@@ -1746,7 +1769,7 @@ class VeDashboardIva(models.Model):
             'Margen C/D', valores_margen, periodos_full)
         html_tasa = self._sparkline_html(
             geo_tasa, 'success', dims['w'], dims['h'], labels,
-            'Tasa Efectiva Retención', valores_tasa, periodos_full,
+            'Recuperación por Retención', valores_tasa, periodos_full,
             hex_color='#5b9a55')
         html_cumpl = self._sparkline_html(
             geo_cumpl, 'warning', dims['w'], dims['h'], labels,
@@ -2451,10 +2474,20 @@ class VeDashboardIva(models.Model):
         # tope, Declarado/SENIAT sumaban también facturación real de uso
         # corriente de Odoo fuera de la ventana YTD).
         year_start, year_end = self._get_rango_ytd()
+        # Bug real encontrado 2026-08-27: filtraba por el campo TEXTO
+        # `periodo` ('yyyy-mm', granularidad de mes) mientras que la dona
+        # de Salud de Conciliación (_compute_salud_conciliacion) y Margen
+        # C/D (_compute_margen_cd) filtran por `fecha_fin` (fecha exacta)
+        # -- en los bordes del rango YTD podían seleccionar conjuntos de
+        # períodos LIGERAMENTE distintos (ej. la quincena en curso, cuyo
+        # fecha_fin cae después de "hoy" pero cuyo mes ya es <= year_end),
+        # así que "Esperadas" de este resumen no cuadraba con el total de
+        # la dona "Sin Conciliar" aunque ambos dijeran ser el mismo YTD.
+        # Unificado a fecha_fin, igual que el resto.
         periodos = self.env['ve.conciliacion.periodo'].search([
             ('company_id', '=', company.id),
-            ('periodo', '>=', f'{year_start.year:04d}-{year_start.month:02d}'),
-            ('periodo', '<=', f'{year_end.year:04d}-{year_end.month:02d}'),
+            ('fecha_fin', '>=', year_start),
+            ('fecha_fin', '<=', year_end),
         ])
         # Barra "Pendiente" QUITADA (pedido explícito 2026-08-22): tenía su
         # propia definición (_serie_valor_pendiente_total, esperado/vencido

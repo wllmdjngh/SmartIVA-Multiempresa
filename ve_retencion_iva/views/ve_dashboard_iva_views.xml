@@ -392,23 +392,23 @@
                         <h5 class="fw-bold text-uppercase text-muted mb-3 mt-2">KPIs Gerenciales</h5>
                         <div class="mb-4" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;">
 
-                            <!-- KPI Nuevo: Posición Neta SENIAT -->
+                            <!-- KPI: Declarado (C.66) vs. SENIAT — antes "Posición Neta SENIAT" -->
                             <!-- Oculto si la compañía carga "Declarado" a mano
-                                 (ve_declarado_manual), pedido explícito
-                                 2026-08-22: ese modo se usa cuando se arranca con
-                                 un cliente a mitad de año con data histórica
-                                 (los meses previos no tienen la carga transaccional
-                                 completa en Odoo para calcular Débito/Créditos), así
-                                 que Posición Neta (que siempre lee el campo_90
-                                 CALCULADO por Odoo) tampoco tiene con qué calcularse
-                                 bien en esos meses, mejor no mostrarlo que mostrar
-                                 un número construido sobre datos incompletos. -->
+                                 (ve_declarado_manual, pedido explícito 2026-08-22,
+                                 caso de cliente arrancado a mitad de año con data
+                                 histórica incompleta). Replanteado 2026-08-27 a
+                                 Campo 66 vs. total_seniat (ver _compute_posicion_neta),
+                                 no depende de Débito/Créditos como el Campo 90
+                                 original, pero se dejó el mismo guard por
+                                 consistencia, sin verificar todavía si campo_66
+                                 también queda incompleto en ese escenario; revisar
+                                 si se confirma que no hace falta ocultarlo ahí. -->
                             <div invisible="ve_declarado_manual">
                                 <div class="card h-100 shadow-sm" style="border-color:#336666;">
                                     <div class="card-header text-white fw-bold py-2"
                                          style="background-color:#336666;"
-                                         title="Espejo exacto del Campo 90 oficial de la Forma 030 (Débito Fiscal menos Créditos Fiscales menos las retenciones ya declaradas) — no es un cálculo aparte, es el mismo número que se declara al SENIAT.">
-                                        Posici&#xf3;n Neta SENIAT
+                                         title="Campo 66 (C.66 — Retenciones del Período) que declaraste en tu Forma 030 comparado contra el Total SENIAT (lo que tus clientes/agentes de retención efectivamente reportaron al portal SENIAT por ti, mismo dato que usa BDS en Índices IOC/TAC/BDS). 'Declarado > SENIAT' = declaraste crédito que el portal todavía no respalda. 'SENIAT > Declarado' = el portal ya tiene más retenciones reportadas de las que declaraste — crédito real sin aprovechar.">
+                                        Declarado (C.66) vs. SENIAT
                                     </div>
                                     <div class="card-body d-flex flex-column p-2">
                                         <div class="row g-0 text-center mb-2" style="min-height: 100px;">
@@ -432,10 +432,10 @@
                                             </div>
                                         </div>
                                         <div class="text-center text-muted" style="font-size:0.7rem;">
-                                            Campo 90 (Forma 030): D&#xe9;bito &#x2212; Cr&#xe9;ditos &#x2212; Retenciones declaradas
+                                            C.66 Declarado &#x2212; Total SENIAT (reportado por tus clientes)
                                         </div>
                                         <div class="d-flex align-items-center gap-2 justify-content-center mt-2 pt-2 border-top"
-                                             title="No depende de esta Posición Neta — es la contraparte: cuánto crédito del período todavía NO está confirmado (No Recibido + Recibido sin Confirmar + Vencido) y qué % representa sobre el Débito Fiscal. Si se confirma, podría mover la Posición Neta de arriba.">
+                                             title="Cuánto crédito del período todavía NO está confirmado (No Recibido + Recibido sin Confirmar + Vencido) y qué % representa sobre el Débito Fiscal — información complementaria, no depende de la brecha Declarado vs. SENIAT de arriba.">
                                             <field name="brecha_gauge_html" readonly="1" nolabel="1"/>
                                             <div class="text-start" style="font-size:0.68rem;">
                                                 <div class="text-muted">Brecha pendiente de confirmar</div>
@@ -463,7 +463,7 @@
                             <div>
                                 <div class="card h-100 border-primary shadow-sm">
                                     <div class="card-header bg-primary text-white fw-bold py-2"
-                                         title="Créditos Fiscales (retenciones recibidas) sobre Débito Fiscal (IVA generado). Mide qué proporción de tu débito fiscal está cubierta por créditos fiscales ya retenidos.">
+                                         title="Crédito Fiscal de COMPRAS (C.39 = C.71 Crédito por Compras + C.20 Excedente arrastrado del mes anterior) sobre Débito Fiscal de Ventas (C.49). Mide cobertura general de IVA con crédito de compras — NO incluye retenciones que te practican tus clientes (ver Recuperación de Crédito por Retención para eso).">
                                         Margen C/D
                                     </div>
                                     <div class="card-body d-flex flex-column p-2">
@@ -519,13 +519,13 @@
                                 </div>
                             </div>
 
-                            <!-- KPI 2: Tasa Efectiva -->
+                            <!-- KPI 2: Recuperación de Crédito por Retención (antes "Tasa Efectiva") -->
                             <div>
                                 <div class="card h-100 shadow-sm" style="border-color:#5b9a55;">
                                     <div class="card-header text-white fw-bold py-2"
                                          style="background-color:#5b9a55;"
-                                         title="Porcentaje de retenciones ya confirmadas con comprobante físico sobre el IVA retenido esperado. Excluye facturas cuyo plazo legal de entrega (Art. 16) todavía no vence — antes de esa fecha no es incumplimiento, es normal. Mide la eficiencia real de recuperación de comprobantes, no ruido de calendario.">
-                                        Tasa Efectiva Retenci&#xf3;n
+                                         title="% de retenciones ya confirmadas con comprobante físico sobre el IVA Causado (débito fiscal) del período. Excluye facturas cuyo plazo legal de entrega (Art. 16) todavía no vence — antes de esa fecha no es incumplimiento, es normal. Renombrado 2026-08-27 (antes 'Tasa Efectiva de Retención'): mide RECUPERACIÓN real de crédito confirmado, no el % legal de retención (75%/100% según N° de Control, ese es otro concepto — porcentaje_retencion).">
+                                        Recuperaci&#xf3;n por Retenci&#xf3;n
                                     </div>
                                     <div class="card-body d-flex flex-column p-2">
                                         <div class="row g-0 text-center mb-2" style="min-height: 100px;">
@@ -760,13 +760,14 @@
                                         </div>
                                     </div>
                                 </div>
-                                <!-- Fila 3: Posición Neta SENIAT (mismo cálculo que la tarjeta KPI),
-                                     oculta en modo "Declarado" manual, ver comentario en la tarjeta KPI. -->
+                                <!-- Fila 3: Declarado (C.66) vs. SENIAT (mismo cálculo que la tarjeta
+                                     KPI, antes "Posición Neta SENIAT"), oculta en modo "Declarado"
+                                     manual, ver comentario en la tarjeta KPI. -->
                                 <div class="row g-2 align-items-center text-center mt-2"
                                      invisible="ve_declarado_manual">
                                     <div class="col-md-4 text-start">
-                                        <span class="small fw-semibold text-uppercase" style="color:#336666;">Posici&#xf3;n Neta SENIAT</span>
-                                        <div class="small text-muted">Campo 90 (Forma 030): D&#xe9;bito &#x2212; Cr&#xe9;ditos &#x2212; Retenciones declaradas</div>
+                                        <span class="small fw-semibold text-uppercase" style="color:#336666;">Declarado (C.66) vs. SENIAT</span>
+                                        <div class="small text-muted">C.66 Declarado &#x2212; Total SENIAT (reportado por tus clientes)</div>
                                     </div>
                                     <div class="col-md-4">
                                         <div class="rounded p-2" style="border:1px solid #336666;">
@@ -796,8 +797,9 @@
                                     </div>
                                 </div>
                                 <!-- Fila 4: Retenido s/ Comprobante — no recibido + no confirmado + vencido.
-                                     Va justo debajo de Posición Neta SENIAT: es la contraparte que todavía
-                                     podría moverla si se confirma (mismo cálculo que la ficha KPI "Brecha"). -->
+                                     Va justo debajo de Declarado (C.66) vs. SENIAT: información
+                                     complementaria (mismo cálculo que la ficha KPI "Brecha"), no depende
+                                     de esa brecha. -->
                                 <div class="row g-2 align-items-center text-center mt-2">
                                     <div class="col-md-4 text-start">
                                         <span class="small fw-semibold text-danger text-uppercase">Retenciones s/Comprobante</span>
@@ -876,7 +878,7 @@
 
                         <!-- ══ Conciliación de Datos vs. SENIAT ═══════════════ -->
                         <h5 class="fw-bold text-uppercase text-muted mb-3"
-                            title="6 categorías: Conciliada (coincide SmartIVA/SENIAT), Solo SmartIVA (el agente no reportó a SENIAT), Solo SENIAT (no registrado en SmartIVA), Diferencia de monto, Sin Conciliar (comprobante de SmartIVA sin procesar contra SENIAT), Sin Procesar SENIAT (registro SENIAT cargado pero nadie corrió Conciliar SENIAT sobre él todavía). La confiabilidad de Posición Neta SENIAT y Excedente Acumulado depende de este %. Cada categoría (salvo Solo SENIAT y Sin Procesar SENIAT, que no existen como registro en SmartIVA) se puede abrir agrupada por Zona/Planta.">
+                            title="6 categorías: Conciliada (coincide SmartIVA/SENIAT), Solo SmartIVA (el agente no reportó a SENIAT), Solo SENIAT (no registrado en SmartIVA), Diferencia de monto, Sin Conciliar (comprobante de SmartIVA sin procesar contra SENIAT), Sin Procesar SENIAT (registro SENIAT cargado pero nadie corrió Conciliar SENIAT sobre él todavía). La confiabilidad de Declarado (C.66) vs. SENIAT y Excedente Acumulado depende de este %. Cada categoría (salvo Solo SENIAT y Sin Procesar SENIAT, que no existen como registro en SmartIVA) se puede abrir agrupada por Zona/Planta.">
                             Conciliaci&#xf3;n de Datos vs. SENIAT
                         </h5>
                         <div class="row g-3 mb-4">
