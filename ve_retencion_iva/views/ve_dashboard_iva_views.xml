@@ -241,7 +241,7 @@
                                                 <field name="aging_bar_html" readonly="1" nolabel="1"/>
                                             </div>
                                             <div class="col-4 text-center"
-                                                 title="Monto vencido sobre el Débito Fiscal (Campo 49) — misma referencia que usa Cascada de Liquidez. Verde &lt; 10%, naranja 10-25%, rojo &#8805; 25%.">
+                                                 title="Monto vencido sobre el D&#xe9;bito Fiscal (Campo 49). Verde &lt; 10%, naranja 10-25%, rojo &#8805; 25%.">
                                                 <div class="small text-muted text-uppercase mb-1">Impacto Per&#xed;odo</div>
                                                 <field name="aging_meter_periodo_html" readonly="1" nolabel="1"/>
                                             </div>
@@ -740,9 +740,6 @@
                                             <div class="fw-bold text-success">
                                                 Bs.<field name="retenido_con_periodo" readonly="1" nolabel="1"/>
                                             </div>
-                                            <div class="small text-success">
-                                                <field name="pct_recuperado_periodo" readonly="1" nolabel="1"/>%
-                                            </div>
                                             <div class="mt-1">
                                                 <button type="object" name="action_ver_retenciones_con_comprobante_periodo"
                                                         class="btn btn-sm btn-outline-success"
@@ -755,9 +752,6 @@
                                             <div class="fw-bold text-success">
                                                 Bs.<field name="retenido_con_comprobante" readonly="1" nolabel="1"/>
                                             </div>
-                                            <div class="small text-success">
-                                                <field name="pct_recuperado" readonly="1" nolabel="1"/>%
-                                            </div>
                                             <div class="mt-1">
                                                 <button type="object" name="action_ver_retenciones_con_comprobante"
                                                         class="btn btn-sm btn-outline-success"
@@ -766,54 +760,13 @@
                                         </div>
                                     </div>
                                 </div>
-                                <!-- Fila 3: Posición Declarado vs. SENIAT (mismo cálculo que la
-                                     tarjeta KPI, antes "Posición Neta SENIAT"), oculta en modo
-                                     "Declarado" manual, ver comentario en la tarjeta KPI. -->
-                                <div class="row g-2 align-items-center text-center mt-2"
-                                     invisible="ve_declarado_manual">
-                                    <div class="col-md-4 text-start">
-                                        <span class="small fw-semibold text-uppercase" style="color:#336666;">Declarado vs. SENIAT</span>
-                                        <div class="small text-muted">Campo 66</div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <div class="rounded p-2" style="border:1px solid #336666;">
-                                            <div class="fw-bold" style="color:#336666;">
-                                                <field name="posicion_neta_periodo_pct" readonly="1" nolabel="1"/>%
-                                            </div>
-                                            <div class="small text-muted">
-                                                Decl. <field name="posicion_neta_declarado_periodo_bs" readonly="1" nolabel="1"/> /
-                                                SENIAT <field name="posicion_neta_seniat_periodo_bs" readonly="1" nolabel="1"/>
-                                            </div>
-                                            <div class="mt-1">
-                                                <button type="object" name="action_ver_declaracion_iva"
-                                                        class="btn btn-sm"
-                                                        style="color:#336666; border:1px solid #336666;"
-                                                        string="Ver Declaraci&#xf3;n"/>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <div class="rounded p-2 bg-light" style="border:1px solid #336666;">
-                                            <div class="fw-bold" style="color:#336666;">
-                                                <field name="posicion_neta_ytd_pct" readonly="1" nolabel="1"/>%
-                                            </div>
-                                            <div class="small text-muted">
-                                                Decl. <field name="posicion_neta_declarado_ytd_bs" readonly="1" nolabel="1"/> /
-                                                SENIAT <field name="posicion_neta_seniat_ytd_bs" readonly="1" nolabel="1"/>
-                                            </div>
-                                            <div class="mt-1">
-                                                <button type="object" name="action_ver_declaracion_iva"
-                                                        class="btn btn-sm"
-                                                        style="color:#336666; border:1px solid #336666;"
-                                                        string="Ver Declaraci&#xf3;n"/>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <!-- Fila 4: Retenido s/ Comprobante — no recibido + no confirmado + vencido.
-                                     Va justo debajo de Posición Declarado vs. SENIAT: información
-                                     complementaria (mismo cálculo que la ficha KPI "Brecha"), no depende
-                                     de esa brecha. -->
+                                <!-- Fila 3: Retenido s/ Comprobante — no recibido + no confirmado +
+                                     vencido, desglosado en 2 colas de riesgo distinto (pedido explícito
+                                     2026-08-27): "Ya en SENIAT" = el agente ya reportó esta retención al
+                                     portal, solo falta el comprobante/confirmación interna (plata
+                                     prácticamente asegurada, papeleo pendiente); "Sin rastro SENIAT" =
+                                     no aparece todavía, riesgo real de cobranza. Ver
+                                     _wh_con_match_seniat_vivo. -->
                                 <div class="row g-2 align-items-center text-center mt-2">
                                     <div class="col-md-4 text-start">
                                         <span class="small fw-semibold text-danger text-uppercase">Retenciones s/Comprobante</span>
@@ -823,9 +776,17 @@
                                         <div class="rounded border border-danger p-2">
                                             <div class="fw-bold text-danger">
                                                 Bs.<field name="retenido_sin_periodo" readonly="1" nolabel="1"/>
+                                                (<field name="retenido_sin_periodo_count" readonly="1" nolabel="1"/> comp.)
                                             </div>
-                                            <div class="small text-danger">
-                                                <field name="pct_en_riesgo_periodo" readonly="1" nolabel="1"/>% (<field name="retenido_sin_periodo_count" readonly="1" nolabel="1"/> comp.)
+                                            <div class="small text-warning mt-1"
+                                                 title="El agente de retenci&#xf3;n ya report&#xf3; esto al SENIAT — falta solo el comprobante/confirmaci&#xf3;n interna, no depende de que el cliente responda.">
+                                                Ya en SENIAT: Bs.<field name="retenido_sin_periodo_seniat_ok_bs" readonly="1" nolabel="1"/>
+                                                (<field name="retenido_sin_periodo_seniat_ok_count" readonly="1" nolabel="1"/>)
+                                            </div>
+                                            <div class="small text-danger"
+                                                 title="No aparece todav&#xed;a en el SENIAT — riesgo real de cobranza, requiere seguimiento directo con el cliente.">
+                                                Sin rastro SENIAT: Bs.<field name="retenido_sin_periodo_seniat_no_bs" readonly="1" nolabel="1"/>
+                                                (<field name="retenido_sin_periodo_seniat_no_count" readonly="1" nolabel="1"/>)
                                             </div>
                                             <div class="mt-1">
                                                 <button type="object" name="action_ver_retenciones_en_riesgo_periodo"
@@ -839,8 +800,15 @@
                                             <div class="fw-bold text-danger">
                                                 Bs.<field name="retenido_sin_comprobante" readonly="1" nolabel="1"/>
                                             </div>
-                                            <div class="small text-danger">
-                                                <field name="pct_en_riesgo" readonly="1" nolabel="1"/>% riesgo
+                                            <div class="small text-warning mt-1"
+                                                 title="El agente de retenci&#xf3;n ya report&#xf3; esto al SENIAT — falta solo el comprobante/confirmaci&#xf3;n interna, no depende de que el cliente responda.">
+                                                Ya en SENIAT: Bs.<field name="retenido_sin_seniat_ok_bs" readonly="1" nolabel="1"/>
+                                                (<field name="retenido_sin_seniat_ok_count" readonly="1" nolabel="1"/>)
+                                            </div>
+                                            <div class="small text-danger"
+                                                 title="No aparece todav&#xed;a en el SENIAT — riesgo real de cobranza, requiere seguimiento directo con el cliente.">
+                                                Sin rastro SENIAT: Bs.<field name="retenido_sin_seniat_no_bs" readonly="1" nolabel="1"/>
+                                                (<field name="retenido_sin_seniat_no_count" readonly="1" nolabel="1"/>)
                                             </div>
                                             <div class="mt-1">
                                                 <button type="object" name="action_ver_retenciones_en_riesgo"

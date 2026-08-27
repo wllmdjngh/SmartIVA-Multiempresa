@@ -171,13 +171,13 @@ class VeDashboardIva(models.Model):
     aging_31_mas_bs = fields.Float(compute='_compute_aging', store=False, digits=(16, 2))
     aging_total_count = fields.Integer(compute='_compute_aging', store=False)
     aging_total_bs = fields.Float(compute='_compute_aging', store=False, digits=(16, 2))
-    # Impacto: el monto en riesgo solo dice algo si se compara con el
-    # Débito Fiscal — la misma referencia que ya usa "Cascada de
-    # Liquidez" (pct_en_riesgo), mostrada aquí para no obligar a bajar a
-    # buscarla. Período (solo comprobantes vencidos del período activo) y
-    # YTD (año calendario en curso, MISMO alcance que pct_en_riesgo de
-    # Cascada de Liquidez — no confundir con aging_total_bs, que sí es
-    # todo el backlog histórico sin filtro de año).
+    # Impacto: el monto vencido solo dice algo si se compara con el
+    # Débito Fiscal — mostrado aquí para no obligar a bajar a buscarlo.
+    # Período (solo comprobantes vencidos del período activo) y YTD (año
+    # calendario en curso — no confundir con aging_total_bs, que sí es
+    # todo el backlog histórico sin filtro de año). Nota 2026-08-27: la
+    # Cascada de Liquidez dejó de usar Débito Fiscal como denominador de
+    # ningún %; este gauge de aging es independiente y sigue vigente.
     aging_periodo_bs = fields.Float(compute='_compute_aging', store=False, digits=(16, 2))
     aging_pct_debito_periodo = fields.Float(
         compute='_compute_aging', store=False, digits=(5, 1))
@@ -419,10 +419,20 @@ class VeDashboardIva(models.Model):
         compute='_compute_liquidez', store=False, digits=(16, 0))
     retenido_sin_comprobante = fields.Float(
         compute='_compute_liquidez', store=False, digits=(16, 0))
-    pct_recuperado = fields.Float(
-        compute='_compute_liquidez', store=False, digits=(5, 1))
-    pct_en_riesgo = fields.Float(
-        compute='_compute_liquidez', store=False, digits=(5, 1))
+    # Desglose de "sin comprobante" en 2 colas de riesgo distinto -- pedido
+    # explícito 2026-08-27: "seniat_ok" = el agente YA reportó esta
+    # retención al SENIAT, solo falta el comprobante/confirmación interna
+    # (plata prácticamente asegurada, solo papeleo); "seniat_no" = no
+    # aparece en el SENIAT todavía (riesgo real de cobranza). Ver
+    # _wh_con_match_seniat_vivo.
+    retenido_sin_seniat_ok_bs = fields.Float(
+        compute='_compute_liquidez', store=False, digits=(16, 0))
+    retenido_sin_seniat_ok_count = fields.Integer(
+        compute='_compute_liquidez', store=False)
+    retenido_sin_seniat_no_bs = fields.Float(
+        compute='_compute_liquidez', store=False, digits=(16, 0))
+    retenido_sin_seniat_no_count = fields.Integer(
+        compute='_compute_liquidez', store=False)
     debito_fiscal_periodo = fields.Float(
         compute='_compute_liquidez', store=False, digits=(16, 0))
     retenido_con_periodo = fields.Float(
@@ -431,10 +441,14 @@ class VeDashboardIva(models.Model):
         compute='_compute_liquidez', store=False, digits=(16, 0))
     retenido_sin_periodo_count = fields.Integer(
         compute='_compute_liquidez', store=False)
-    pct_recuperado_periodo = fields.Float(
-        compute='_compute_liquidez', store=False, digits=(5, 1))
-    pct_en_riesgo_periodo = fields.Float(
-        compute='_compute_liquidez', store=False, digits=(5, 1))
+    retenido_sin_periodo_seniat_ok_bs = fields.Float(
+        compute='_compute_liquidez', store=False, digits=(16, 0))
+    retenido_sin_periodo_seniat_ok_count = fields.Integer(
+        compute='_compute_liquidez', store=False)
+    retenido_sin_periodo_seniat_no_bs = fields.Float(
+        compute='_compute_liquidez', store=False, digits=(16, 0))
+    retenido_sin_periodo_seniat_no_count = fields.Integer(
+        compute='_compute_liquidez', store=False)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
     def _get_periodo_activo(self):
@@ -1371,24 +1385,43 @@ class VeDashboardIva(models.Model):
     def _compute_posicion_neta(self):
         year_start, year_end = self._get_rango_ytd()
         for rec in self:
-            # Período: el mismo "último período con datos" que usa Margen C/D.
+            # Período: el mismo "último período con datos" que usa Margen C/D
+            # para UBICAR el período de referencia -- pero "Declarado" (C.66)
+            # solo cuenta si ESE período ya está realmente declarado
+            # (estado == 'declarado'). Bug real 2026-08-27: antes contaba
+            # también borrador/revisión/aprobado como "Declarado", dando un
+            # % de brecha falso (ej. 100%) cuando en realidad nada se había
+            # declarado todavía -- SENIAT en 0 + Declarado mal contado > 0
+            # se leía como "riesgo", cuando el caso real es "no hay nada que
+            # comparar todavía".
             ultimo = self.env['ve.conciliacion.periodo'].search([
                 ('estado', 'in', ['borrador', 'revision', 'aprobado', 'declarado']),
                 ('company_id', '=', self.env.company.id),
             ], order='fecha_fin desc', limit=1)
-            declarado_p = ultimo.declaracion_iva_id.campo_66 if ultimo and ultimo.declaracion_iva_id else 0.0
+            declarado_p = (
+                ultimo.declaracion_iva_id.campo_66
+                if ultimo and ultimo.estado == 'declarado' and ultimo.declaracion_iva_id
+                else 0.0
+            )
             seniat_p = ultimo.total_seniat if ultimo else 0.0
             p = declarado_p - seniat_p
 
+            # SENIAT (total_seniat) es independiente del workflow de
+            # declaración -- el portal puede tener data extraída aunque el
+            # período siga en borrador -- así que su universo YTD sigue
+            # siendo todos los períodos del año (mismo criterio de siempre).
+            # "Declarado" YTD, en cambio, se acota a los que SÍ llegaron a
+            # estado 'declarado'.
             periodos_anio = self.env['ve.conciliacion.periodo'].search([
                 ('estado', 'in', ['borrador', 'revision', 'aprobado', 'declarado']),
                 ('fecha_fin', '>=', year_start),
                 ('fecha_fin', '<=', year_end),
                 ('company_id', '=', self.env.company.id),
             ])
+            periodos_declarados = periodos_anio.filtered(lambda p: p.estado == 'declarado')
             declarado_y = sum(
                 per.declaracion_iva_id.campo_66
-                for per in periodos_anio if per.declaracion_iva_id
+                for per in periodos_declarados if per.declaracion_iva_id
             )
             seniat_y = sum(periodos_anio.mapped('total_seniat'))
             y = declarado_y - seniat_y
@@ -1599,10 +1632,11 @@ class VeDashboardIva(models.Model):
     def _serie_valor_declarado_seniat(self, periodo):
         """Brecha % del KPI "Posición Declarado vs. SENIAT" para ESE
         período -- mismo cálculo que _compute_posicion_neta (Campo 66
-        Declarado − total_seniat, sobre Declarado), para el sparkline de
+        Declarado − total_seniat, sobre Declarado, "Declarado" solo si el
+        período ya está en estado 'declarado'), para el sparkline de
         tendencia."""
         decl = periodo.declaracion_iva_id
-        declarado = decl.campo_66 if decl else 0.0
+        declarado = decl.campo_66 if (periodo.estado == 'declarado' and decl) else 0.0
         seniat = periodo.total_seniat
         return ((declarado - seniat) / declarado * 100) if declarado else 0.0
 
@@ -2211,6 +2245,65 @@ class VeDashboardIva(models.Model):
             '</div>'
         )
 
+    def _wh_con_match_seniat_vivo(self, wh_records):
+        """Devuelve el subconjunto de `wh_records` que tiene match en vivo
+        con un ve.seniat.retencion (RIF+Control N1, RIF+Factura N2 si N1 es
+        ambiguo o vacío) -- misma cascada que ve_conciliacion.py::_do_conciliar
+        y _solo_seniat_sin_match_bs de arriba, pero clasifica cada
+        comprobante sí/no en vez de repartir un total de SENIAT entre
+        comprobantes (por eso no necesita el set de "ya consumidos" que sí
+        usa _solo_seniat_sin_match_bs). Usado por _compute_liquidez para
+        distinguir, dentro de "Retenciones s/Comprobante", cuáles ya
+        aparecen reportadas por el agente en el SENIAT (falta solo el
+        comprobante interno, plata prácticamente asegurada) de cuáles no
+        tienen ningún rastro todavía (riesgo real de que nunca llegue) --
+        pedido explícito 2026-08-27, rediseño de Cascada de Liquidez.
+
+        No depende de `estado_conciliacion` (puede estar desactualizado si
+        la reconciliación del período todavía no corrió)."""
+        if not wh_records:
+            return self.env['ve.wh.iva']
+        Concil = self.env['ve.conciliacion.periodo']
+        norm_rif = Concil._norm_rif
+        norm_ctrl = Concil._norm_ctrl
+        norm_factura = Concil._norm_factura
+
+        seniat_recs = self.env['ve.seniat.retencion'].search([
+            ('company_id', '=', self.env.company.id),
+        ])
+        by_ctrl = {}
+        by_factura = {}
+        seniat_norm_factura = {}
+        for s in seniat_recs:
+            s_rif = norm_rif(s.rif_agente)
+            s_ctrl = norm_ctrl(s.nro_control)
+            s_factura = norm_factura(s.nro_documento)
+            seniat_norm_factura[s.id] = s_factura
+            if s_ctrl:
+                by_ctrl.setdefault((s_rif, s_ctrl), []).append(s)
+            if s_factura:
+                by_factura.setdefault((s_rif, s_factura), []).append(s)
+
+        matched_ids = []
+        for wh in wh_records:
+            wh_rif = norm_rif(wh.rif)
+            wh_ctrl_norm = norm_ctrl(wh.nro_control)
+            wh_factura_raw = (wh.invoice_id.name if wh.invoice_id else (wh.nro_documento or '')).strip().upper()
+            wh_factura_norm = norm_factura(wh_factura_raw)
+
+            candidatos = by_ctrl.get((wh_rif, wh_ctrl_norm), []) if wh_ctrl_norm else []
+            if len(candidatos) > 1 and wh_factura_norm:
+                por_doc = [s for s in candidatos if seniat_norm_factura[s.id] == wh_factura_norm]
+                if por_doc:
+                    candidatos = por_doc
+            if not candidatos and wh_factura_norm:
+                candidatos = by_factura.get((wh_rif, wh_factura_norm), [])
+
+            if len(candidatos) == 1:
+                matched_ids.append(wh.id)
+
+        return self.env['ve.wh.iva'].browse(matched_ids)
+
     def _solo_seniat_sin_match_bs(self):
         """Devuelve (sin_match, total_general) -- monto SENIAT sin
         contraparte en Odoo, calculado EN VIVO por RIF + N° Control (N1) o
@@ -2611,31 +2704,40 @@ class VeDashboardIva(models.Model):
         # recibido (esperado, plazo todavía no vence) + no confirmado
         # (borrador — ya lo entregó el cliente, solo falta confirmarlo
         # internamente, cuenta igual aunque su plazo no haya vencido).
-        sin_ytd_venc = sum(self.env['ve.wh.iva'].search(
+        venc_ytd_recs = self.env['ve.wh.iva'].search(
             domain_ytd + [
                 ('state', 'in', ['esperado', 'vencido']),
                 ('fecha_vencimiento_entrega', '<=', hoy),
             ]
-        ).mapped('monto_retenido'))
-        sin_ytd_no_recibido = sum(self.env['ve.wh.iva'].search(
+        )
+        no_recibido_ytd_recs = self.env['ve.wh.iva'].search(
             domain_ytd + [
                 ('state', '=', 'esperado'),
                 '|', ('fecha_vencimiento_entrega', '>', hoy),
                      ('fecha_vencimiento_entrega', '=', False),
             ]
-        ).mapped('monto_retenido'))
-        sin_ytd_borrador = sum(self.env['ve.wh.iva'].search([
+        )
+        borrador_ytd_recs = self.env['ve.wh.iva'].search([
             ('conciliacion_id', 'in', periodos_anio.ids),
             ('state', '=', 'borrador'),
             ('company_id', '=', self.env.company.id),
-        ]).mapped('monto_retenido'))
-        sin_ytd = sin_ytd_venc + sin_ytd_no_recibido + sin_ytd_borrador
+        ])
+        sin_ytd_recs = venc_ytd_recs | no_recibido_ytd_recs | borrador_ytd_recs
+        sin_ytd = sum(sin_ytd_recs.mapped('monto_retenido'))
+        # Desglose por riesgo real (pedido explícito 2026-08-27, ver
+        # _wh_con_match_seniat_vivo): "seniat_ok" ya lo reportó el agente
+        # al SENIAT (falta solo el comprobante/confirmación interna),
+        # "seniat_no" no tiene ningún rastro en el SENIAT todavía.
+        seniat_ok_ytd_recs = self._wh_con_match_seniat_vivo(sin_ytd_recs)
+        seniat_no_ytd_recs = sin_ytd_recs - seniat_ok_ytd_recs
         for rec in self:
             rec.debito_fiscal_cascade = debito_ytd
             rec.retenido_con_comprobante = con_ytd
             rec.retenido_sin_comprobante = sin_ytd
-            rec.pct_recuperado = (con_ytd / debito_ytd * 100) if debito_ytd > 0 else 0.0
-            rec.pct_en_riesgo = (sin_ytd / debito_ytd * 100) if debito_ytd > 0 else 0.0
+            rec.retenido_sin_seniat_ok_bs = sum(seniat_ok_ytd_recs.mapped('monto_retenido'))
+            rec.retenido_sin_seniat_ok_count = len(seniat_ok_ytd_recs)
+            rec.retenido_sin_seniat_no_bs = sum(seniat_no_ytd_recs.mapped('monto_retenido'))
+            rec.retenido_sin_seniat_no_count = len(seniat_no_ytd_recs)
 
             periodo = rec._get_periodo_activo()
             if periodo:
@@ -2647,26 +2749,47 @@ class VeDashboardIva(models.Model):
                 # Mismas 3 categorías que "Crédito del Período por Estado"
                 # (_compute_cobranza_exposicion, conciliacion_id = período
                 # activo): no recibido + no confirmado (borrador) + vencido.
-                # Se leen directo de esos campos ya computados — un solo
-                # cálculo, para que Cascada/Brecha nunca se desincronicen
-                # de lo que ya muestra el Operativo.
+                # Los totales Bs/conteo se leen de esos campos ya
+                # computados (un solo cálculo, para que Cascada nunca se
+                # desincronice de lo que ya muestra el Operativo); el
+                # recordset se vuelve a construir acá solo para clasificar
+                # por match SENIAT (esos campos no exponen el recordset).
                 sin_p = (rec.estado_no_recibido_bs + rec.estado_borrador_bs
                           + rec.estado_vencido_bs)
                 sin_p_count = (rec.estado_no_recibido_count + rec.estado_borrador_count
                                 + rec.estado_vencido_count)
+                del_periodo = self.env['ve.wh.iva'].search([
+                    ('conciliacion_id', '=', periodo.id),
+                    ('state', '!=', 'anulado'),
+                ])
+                borrador_p_recs = del_periodo.filtered(lambda r: r.state == 'borrador')
+                vencido_p_recs = del_periodo.filtered(
+                    lambda r: r.state in ('esperado', 'vencido')
+                    and r.fecha_vencimiento_entrega and r.fecha_vencimiento_entrega <= hoy)
+                no_recibido_p_recs = del_periodo.filtered(
+                    lambda r: r.state == 'esperado'
+                    and (not r.fecha_vencimiento_entrega or r.fecha_vencimiento_entrega > hoy))
+                sin_p_recs = borrador_p_recs | vencido_p_recs | no_recibido_p_recs
+                seniat_ok_p_recs = rec._wh_con_match_seniat_vivo(sin_p_recs)
+                seniat_no_p_recs = sin_p_recs - seniat_ok_p_recs
+
                 rec.debito_fiscal_periodo = debito_p
                 rec.retenido_con_periodo = con_p
                 rec.retenido_sin_periodo = sin_p
                 rec.retenido_sin_periodo_count = sin_p_count
-                rec.pct_recuperado_periodo = (con_p / debito_p * 100) if debito_p > 0 else 0.0
-                rec.pct_en_riesgo_periodo = (sin_p / debito_p * 100) if debito_p > 0 else 0.0
+                rec.retenido_sin_periodo_seniat_ok_bs = sum(seniat_ok_p_recs.mapped('monto_retenido'))
+                rec.retenido_sin_periodo_seniat_ok_count = len(seniat_ok_p_recs)
+                rec.retenido_sin_periodo_seniat_no_bs = sum(seniat_no_p_recs.mapped('monto_retenido'))
+                rec.retenido_sin_periodo_seniat_no_count = len(seniat_no_p_recs)
             else:
                 rec.debito_fiscal_periodo = 0.0
                 rec.retenido_con_periodo = 0.0
                 rec.retenido_sin_periodo = 0.0
                 rec.retenido_sin_periodo_count = 0
-                rec.pct_recuperado_periodo = 0.0
-                rec.pct_en_riesgo_periodo = 0.0
+                rec.retenido_sin_periodo_seniat_ok_bs = 0.0
+                rec.retenido_sin_periodo_seniat_ok_count = 0
+                rec.retenido_sin_periodo_seniat_no_bs = 0.0
+                rec.retenido_sin_periodo_seniat_no_count = 0
 
     # ── Apertura singleton ────────────────────────────────────────────────────
     def _get_or_create_singleton(self):
