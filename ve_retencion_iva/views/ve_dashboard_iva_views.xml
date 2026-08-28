@@ -36,7 +36,7 @@
                     <div class="o_form_sheet" style="max-width:100%;">
 
                         <!-- ══ Semáforo Operativo ═══════════════════════════════ -->
-                        <div class="position-relative mb-3 mt-2">
+                        <div class="position-relative mb-3 mt-2 pb-3 border-bottom border-2">
                             <h5 class="fw-bold text-uppercase text-muted mb-0">
                                 Sem&#xe1;foro Operativo —
                                 <span class="text-dark fw-normal fs-6">
@@ -390,7 +390,7 @@
                     <div class="o_form_sheet" style="max-width:100%;">
 
                         <!-- ══ KPIs Gerenciales ═════════════════════════════════ -->
-                        <div class="position-relative mb-3 mt-2">
+                        <div class="position-relative mb-3 mt-2 pb-3 border-bottom border-2">
                             <h5 class="fw-bold text-uppercase text-muted mb-0">KPIs Gerenciales</h5>
                             <div class="fw-bold mb-0 position-absolute top-50 start-50 translate-middle"
                                  style="background-color:#e9ecef; padding:4px 18px; border-radius:6px; font-size:2rem;"
@@ -693,6 +693,9 @@
                                     <div class="col-md-4"/>
                                     <div class="col-md-4">
                                         <span class="small fw-bold text-muted text-uppercase">Per&#xed;odo</span>
+                                        <div class="text-muted" style="font-size:0.7rem;">
+                                            <field name="periodo_activo_name" readonly="1" nolabel="1"/>
+                                        </div>
                                     </div>
                                     <div class="col-md-4">
                                         <span class="small fw-bold text-muted text-uppercase">Acum. YTD</span>
@@ -962,7 +965,7 @@
                         <!-- ══ Retenciones Esperadas / Recibido / Pendiente / Declarado / SENIAT / Conciliado — año en curso ══ -->
                         <h5 class="fw-bold text-uppercase text-muted mb-3"
                             title="Por mes del año en curso: Retenciones Esperadas (cálculo legal real de SmartIVA por factura -- 75%/100% según N° de Control, ver _serie_valor_estimado -- pueden estar en cualquier estado), Recibido (con comprobante confirmado), Pendiente por Recibir, Declarado, Total SENIAT y Conciliado (del Pendiente, cuánto ya confirmó SENIAT aunque el papel no haya llegado). Pase el mouse sobre cada barra para el monto exacto de ese mes.">
-                            Retenciones Esperadas / Recibido / Pendiente / Declarado / SENIAT / Conciliado (YTD)
+                            Retenciones Esperadas / Recibido / Pendiente / Declarado / SENIAT / Conciliado (MES)
                         </h5>
                         <div class="card shadow-sm border-0 mb-4">
                             <div class="card-body">
