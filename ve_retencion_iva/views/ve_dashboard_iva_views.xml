@@ -202,7 +202,16 @@
                         </h5>
                         <div class="card shadow-sm border-0 mb-4">
                             <div class="card-body">
-                                <field name="estado_periodo_bar_html" readonly="1" nolabel="1"/>
+                                <div class="row g-2 align-items-center">
+                                    <div class="col-9">
+                                        <field name="estado_periodo_bar_html" readonly="1" nolabel="1"/>
+                                    </div>
+                                    <div class="col-3 text-center"
+                                         title="Monto vencido sobre el D&#xe9;bito Fiscal (Campo 49) de esta quincena. Verde &lt; 10%, naranja 10-25%, rojo &#8805; 25%.">
+                                        <div class="small text-muted text-uppercase mb-1">Impacto Per&#xed;odo</div>
+                                        <field name="aging_meter_periodo_html" readonly="1" nolabel="1"/>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -236,16 +245,11 @@
                                             </span>
                                         </div>
                                         <div class="row g-2 align-items-center border-top mt-2 pt-2">
-                                            <div class="col-4">
+                                            <div class="col-6">
                                                 <div class="small text-muted mb-1">Composici&#xf3;n del riesgo</div>
                                                 <field name="aging_bar_html" readonly="1" nolabel="1"/>
                                             </div>
-                                            <div class="col-4 text-center"
-                                                 title="Monto vencido sobre el D&#xe9;bito Fiscal (Campo 49). Verde &lt; 10%, naranja 10-25%, rojo &#8805; 25%.">
-                                                <div class="small text-muted text-uppercase mb-1">Impacto Per&#xed;odo</div>
-                                                <field name="aging_meter_periodo_html" readonly="1" nolabel="1"/>
-                                            </div>
-                                            <div class="col-4 text-center">
+                                            <div class="col-6 text-center">
                                                 <div class="small text-muted text-uppercase mb-1">Impacto YTD</div>
                                                 <field name="aging_meter_ytd_html" readonly="1" nolabel="1"/>
                                             </div>

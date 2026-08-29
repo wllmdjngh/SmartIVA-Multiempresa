@@ -407,7 +407,7 @@ def _validado_seniat_norm(valor):
 
 class VeConectaCargaVentas(models.Model):
     _name = 've.conecta.carga.ventas'
-    _description = 'Carga de Libro de Ventas — SmartIVA Conecta (CONECTA-14)'
+    _description = 'Carga de Libro de Ventas'
     _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'create_date desc'
 

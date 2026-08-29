@@ -278,19 +278,10 @@ class VeWizardSetupCompania(models.TransientModel):
         else:
             log.append('= Diario de Banco ya existía')
 
-        # Bug real encontrado 2026-08-29 (proyecto SmartIVA-Multiempresa,
-        # compañías Purolomo/INGREDIA): crear el diario Banco NO le asigna
-        # "Cuenta Transitoria" (`suspense_account_id`) -- queda en blanco.
-        # Sin ella, account.payment.register no tiene dónde anotar el
-        # cobro/pago transitorio y falla con "No se encontró ninguna
-        # cuenta pendiente para realizar el pago" en cualquier carga con
-        # EstadoPago=Pagado, aunque la factura se haya posteado bien.
-        # Primer intento con `outstanding_receipts_account_id`/
-        # `outstanding_payments_account_id` (nombres de Odoo 17) dio
-        # AttributeError en vivo -- en esta versión (Odoo 19) el campo real
-        # es uno solo, `suspense_account_id` ("Cuenta Transitoria" en la
-        # UI), confirmado por la usuaria vía "Ver Metadatos". Idempotente:
-        # solo completa lo que esté vacío, igual que el resto del wizard.
+        # Cuenta Transitoria del diario Banco (`suspense_account_id`) -- no
+        # es la causa del error de pago (ver comentario de
+        # transfer_account_id más abajo, causa real), pero sigue siendo
+        # buena práctica para la conciliación bancaria nativa. Idempotente.
         transitoria, msg = self._asegurar_cuenta(
             company, '1132001', 'Cuenta Transitoria', 'asset_current', reconcile=True)
         log.append(msg)
@@ -298,21 +289,31 @@ class VeWizardSetupCompania(models.TransientModel):
         if not banco.suspense_account_id:
             banco.suspense_account_id = transitoria.id
             log.append('+ "Cuenta Transitoria" (Diario Banco) → 1132001')
-        elif not banco.suspense_account_id.reconcile:
-            # Bug real encontrado 2026-08-29 (INGREDIA): la cuenta YA estaba
-            # asignada (configurada a mano antes de que este wizard supiera
-            # de `suspense_account_id`) pero sin "Permitir Conciliación" --
-            # account.payment.register._get_outstanding_account() la trata
-            # como si no existiera y falla con el mismo "No se encontró
-            # ninguna cuenta pendiente para realizar el pago", aunque el
-            # campo esté lleno. El chequeo "si no está vacío, no la toco" no
-            # alcanza -- hay que corregir también una cuenta ya asignada
-            # pero mal configurada.
-            banco.suspense_account_id.reconcile = True
-            log.append('+ "Cuenta Transitoria" ya estaba asignada pero sin '
-                        '"Permitir Conciliación" -- activado')
         else:
             log.append('= "Cuenta Transitoria" ya estaba configurada')
+
+        # Causa real del "No se encontró ninguna cuenta pendiente para
+        # realizar el pago" -- encontrada 2026-08-29 (INGREDIA) leyendo el
+        # código fuente real de Odoo (account/models/account_payment.py::
+        # _get_outstanding_account) tras 2 intentos fallidos adivinando
+        # (`outstanding_receipts_account_id` de Odoo 17, después
+        # `suspense_account_id` del diario -- ninguno de los 2 es lo que ese
+        # método usa). El método real busca la cuenta vía la plantilla de
+        # plan de cuentas (`chart_template.ref('account_journal_payment_
+        # debit/credit_account_id')`), y si la compañía no tiene
+        # `chart_template` instalado (nuestro caso -- el módulo no depende
+        # de l10n_ve a propósito, ver manifest), cae a
+        # `company.transfer_account_id` ("Cuenta de Transferencia") -- que
+        # tampoco se auto-asigna sin chart_template. Sin NINGUNA de las 2,
+        # revienta con ese error, sin importar qué tan bien configurado
+        # esté el diario Banco (de ahí que arreglar suspense_account_id no
+        # alcanzara). Confirmado por RPC en vivo: asignar transfer_account_id
+        # resolvió el registro de pago en la misma factura que fallaba.
+        if not company.transfer_account_id:
+            company.transfer_account_id = transitoria.id
+            log.append('+ "Cuenta de Transferencia" (Compañía) → 1132001')
+        else:
+            log.append('= "Cuenta de Transferencia" ya estaba configurada')
 
         # ── Cuentas IVA — mismo par (1151004/2172003) que ya documenta
         #    README.md y busca post_init_hook al instalar el módulo. Sirven
