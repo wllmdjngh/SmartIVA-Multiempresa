@@ -1565,25 +1565,27 @@ class VeConectaCargaVentas(models.Model):
         # sabe vencido en el momento de la carga.
         self.env['ve.wh.iva'].sudo()._cron_actualizar_estado_vencido()
 
-        # Bucket final por ESTADO REAL de cada retención (Confirmado vs
-        # No Recibido/Vencido) — se calcula recién ahora, después del
-        # sync de Vencido de arriba, para que "vencido" ya esté aplicado.
-        # No se asume que "traía monto en el feed" siempre implica
-        # "quedó confirmada" (ni al revés) — se lee el estado real de
-        # cada registro.
+        # Retenciones creadas en esta carga — el desglose real (por estado
+        # x N.Control) se calcula recién ahora, después del sync de
+        # Vencido de arriba, para que "vencido" ya esté aplicado. No se
+        # asume que "traía monto en el feed" siempre implica "quedó
+        # confirmada" (ni al revés) — se lee el estado real de cada
+        # registro. Rediseño completo de tablas 2026-08-28 (3 tablas
+        # numeradas: 1 Facturas, 2 Retenciones, 3 Detalle — antes 6 tablas
+        # con datos repartidos/duplicados entre ellas, ver conversación).
+        # Tabla "Montos IVA" (Archivo vs. SmartIVA) eliminada 2026-08-29,
+        # pedido explícito.
         retenciones_creadas = len(wh_tracking)
-        retenciones_confirmadas_bucket = retenciones_pendientes_bucket = 0
-        monto_feed_confirmadas = monto_odoo_confirmadas = 0.0
-        monto_feed_pendientes = monto_odoo_pendientes = 0.0
 
-        # Totales Archivo vs. Odoo (Base Imponible / Monto IVA / Monto
-        # Retenido) para TODAS las facturas creadas, sin depender de que
-        # traigan Zona ni de que hayan generado retención -- pedido
+        # Totales Archivo vs. SmartIVA (Base Imponible) para TODAS las
+        # facturas creadas, sin depender de que traigan Zona -- pedido
         # explícito 2026-08-06, para poder cuadrar el Resumen contra el
-        # propio Libro de Ventas de un vistazo, no solo por Zona.
+        # propio Libro de Ventas de un vistazo, no solo por Zona. Monto
+        # Retenido NO se acumula acá desde 2026-08-28 -- vive completo en
+        # Tabla 2 (Totales), ver más abajo. Monto IVA eliminado 2026-08-29
+        # (Tabla 3 se quitó, no tenía otro lugar donde vivir -- pedido
+        # explícito).
         base_archivo_tot = base_odoo_tot = 0.0
-        iva_archivo_tot = iva_odoo_tot = 0.0
-        retenido_archivo_tot = 0.0
         for linea in self.linea_ids:
             if not linea.invoice_id:
                 continue
@@ -1593,8 +1595,6 @@ class VeConectaCargaVentas(models.Model):
             # así que sin esto "Diferencia" salía falsa cada vez que el
             # archivo traía esa columna con datos.
             base_archivo_tot += linea.base_16 + linea.base_8 + linea.base_exento
-            iva_archivo_tot += linea.monto_iva
-            retenido_archivo_tot += linea.monto_retenido
             # Segundo bug real 2026-08-20: una Nota de Crédito (Anulación de
             # un par Registro+Anulación) trae base_16/base_8/monto_iva NEGATIVOS
             # en el archivo (neteando contra su Registro), pero
@@ -1604,7 +1604,6 @@ class VeConectaCargaVentas(models.Model):
             # lado Odoo en vez de netearlo, inflando "Diferencia" en cada par.
             signo = -1 if linea.invoice_id.move_type == 'out_refund' else 1
             base_odoo_tot += signo * linea.invoice_id.amount_untaxed
-            iva_odoo_tot += signo * linea.invoice_id.amount_tax
 
         # Consistencia por Zona — pedido explícito 2026-08-02, tras validar
         # a mano por RPC (Cementos, Nov 1Q 2025) que Total/IVA/Monto
@@ -1637,38 +1636,60 @@ class VeConectaCargaVentas(models.Model):
                     b['total_odoo'] += linea.invoice_id.amount_total
                     b['iva_odoo'] += linea.invoice_id.amount_tax
 
-        # Desglose por estado_recepcion — pedido explícito 2026-08-06, para
-        # que el Resumen deje ver de un vistazo cuántas retenciones quedaron
-        # en cada estado (no solo Confirmado/pendiente en bloque) y que la
-        # suma cuadre exacto contra "Facturas creadas" junto con "Facturas
-        # sin Retención" (no CE, u otra razón).
-        por_estado_recepcion = {}
-        monto_por_estado_recepcion = {}
-        # N° de Control: si falta, Odoo aplica 100% de retención por regla
-        # legal (ver account_move.py::_ve_crear_retencion_esperada) -- eso
-        # casi siempre difiere del monto que traía el archivo. Desglose
-        # aparte pedido explícito 2026-08-11, para que esa diferencia no se
-        # pierda mezclada dentro de "Confirmadas"/"Pendientes" en bloque.
-        con_control_n = sin_control_n = 0
-        con_control_feed = con_control_odoo = 0.0
-        sin_control_feed = sin_control_odoo = 0.0
+        # Desglose cruzado (N° de Control x Estado real) — rediseño
+        # 2026-08-28 (ver conversación): antes "por estado" y "por N°
+        # Control" eran 2 cortes INDEPENDIENTES sobre la misma población
+        # (mezclaban Con+Sin Control entre sí y todos los estados entre
+        # sí), así que sumar cualquier columna de la tabla vieja no
+        # cuadraba con el total real -- las filas se solapaban entre sí en
+        # vez de partir la población en baldes que no se pisan. Ahora es
+        # un solo cruce: cada retención cae en exactamente 1 balde
+        # (con_control, estado).
+        #
+        # Bucket por estado real (`estado_recepcion`, ver
+        # ve_wh_iva.py::_compute_estado_recepcion): 'recibido'/
+        # 'confirmado_dif' no son alcanzables desde ESTE flujo (acá solo
+        # se llama action_confirmar() si el monto coincide -- si no,
+        # queda 'recibido_dif' sin promoverse solo), pero se agrupan con
+        # 'confirmado' por si acaso cambia esa lógica más adelante.
+        # 'esperado'/'vencido' con monto_retenido = 0 (factura 100%
+        # exenta, sin base gravada) se separan de las que sí tienen un
+        # monto real esperado -- pedido explícito 2026-08-28, "No
+        # Recibido" real es cuando no hay nada que recibir, no cuando
+        # simplemente no ha llegado el papel.
+        BUCKET_ORDEN = ['confirmado', 'retenido_s_comprobante', 'recibido_dif',
+                        'no_recibido', 'anulado']
+        BUCKET_LABEL = {
+            'confirmado': 'Confirmado (comprobante y monto coinciden con SmartIVA)',
+            'retenido_s_comprobante': 'Retenido s/Comprobante (monto calculado, aún sin comprobante)',
+            'recibido_dif': 'Recibido c/Dif (comprobante llegó, monto no coincide, pendiente de revisar)',
+            'no_recibido': 'No Recibido (factura 100% exenta, monto retenido = 0)',
+            'anulado': 'Anulado',
+        }
 
+        def _bucket_de(wh):
+            er = wh.estado_recepcion
+            if er in ('confirmado', 'confirmado_dif', 'recibido'):
+                return 'confirmado'
+            if er == 'recibido_dif':
+                return 'recibido_dif'
+            if er == 'anulado':
+                return 'anulado'
+            return 'no_recibido' if abs(wh.monto_retenido) < 0.01 else 'retenido_s_comprobante'
+
+        tally = {
+            True: {b: {'n': 0, 'archivo': 0.0, 'smartiva': 0.0} for b in BUCKET_ORDEN},
+            False: {b: {'n': 0, 'archivo': 0.0, 'smartiva': 0.0} for b in BUCKET_ORDEN},
+        }
         if wh_tracking:
             whs_finales = {w.id: w for w in WhIva.browse([t[0] for t in wh_tracking])}
             for wh_id, monto_feed in wh_tracking:
                 wh = whs_finales[wh_id]
-                por_estado_recepcion[wh.estado_recepcion] = (
-                    por_estado_recepcion.get(wh.estado_recepcion, 0) + 1)
-                monto_por_estado_recepcion[wh.estado_recepcion] = (
-                    monto_por_estado_recepcion.get(wh.estado_recepcion, 0.0) + wh.monto_retenido)
-                if wh.nro_control:
-                    con_control_n += 1
-                    con_control_feed += monto_feed
-                    con_control_odoo += wh.monto_retenido
-                else:
-                    sin_control_n += 1
-                    sin_control_feed += monto_feed
-                    sin_control_odoo += wh.monto_retenido
+                con_control = bool(wh.nro_control)
+                slot = tally[con_control][_bucket_de(wh)]
+                slot['n'] += 1
+                slot['archivo'] += monto_feed
+                slot['smartiva'] += wh.monto_retenido
                 # Bug real encontrado 2026-08-05 (Cementos, carga histórica
                 # de enero — la mayoría de los comprobantes ya estaban
                 # "Vencido" por fecha límite pasada al momento de cargar):
@@ -1680,20 +1701,21 @@ class VeConectaCargaVentas(models.Model):
                 # (arriba) ya suman TODAS las facturas creadas sin ese
                 # filtro; retenido_odoo debe hacer lo mismo para que la
                 # comparación con el archivo sea real, no una manzana
-                # contra una naranja.
+                # contra una naranja. Tabla Zona no se tocó en el rediseño
+                # 2026-08-28 (fuera de alcance), sigue con su propio
+                # criterio wh.state=='confirmado'.
                 if hay_zonas:
                     b = _zbucket(wh.zona)
                     b['retenido_odoo'] += wh.monto_retenido
-                if wh.state == 'confirmado':
-                    retenciones_confirmadas_bucket += 1
-                    monto_feed_confirmadas += monto_feed
-                    monto_odoo_confirmadas += wh.monto_retenido
-                    if hay_zonas:
+                    if wh.state == 'confirmado':
                         b['confirmadas'] += 1
-                else:
-                    retenciones_pendientes_bucket += 1
-                    monto_feed_pendientes += monto_feed
-                    monto_odoo_pendientes += wh.monto_retenido
+
+        con_control_n = sum(tally[True][b]['n'] for b in BUCKET_ORDEN)
+        con_control_feed = sum(tally[True][b]['archivo'] for b in BUCKET_ORDEN)
+        con_control_smartiva = sum(tally[True][b]['smartiva'] for b in BUCKET_ORDEN)
+        sin_control_n = sum(tally[False][b]['n'] for b in BUCKET_ORDEN)
+        sin_control_feed = sum(tally[False][b]['archivo'] for b in BUCKET_ORDEN)
+        sin_control_smartiva = sum(tally[False][b]['smartiva'] for b in BUCKET_ORDEN)
 
         # bloqueadas se calculó ANTES del bucle de creación -- nada en ese
         # bucle toca el campo bloqueante de otra fila, así que sigue
@@ -1710,79 +1732,10 @@ class VeConectaCargaVentas(models.Model):
         def _m(v):
             return f'{v:,.2f}' if v else '—'
 
-        diferencia_confirmadas = monto_odoo_confirmadas - monto_feed_confirmadas
         th = ('style="border:1px solid #ccc; padding:3px 8px; background:#f0f0f0; '
               'text-align:left;"')
         td = 'style="border:1px solid #ccc; padding:3px 8px;"'
         tdr = 'style="border:1px solid #ccc; padding:3px 8px; text-align:right;"'
-
-        def _fila(concepto, cant, m_archivo='—', m_odoo='—', dif='—', color=None):
-            estilo_dif = f' style="color:{color};"' if color else ''
-            return (
-                f'<tr><td {td}>{concepto}</td>'
-                f'<td {tdr}>{cant}</td>'
-                f'<td {tdr}>{m_archivo}</td>'
-                f'<td {tdr}>{m_odoo}</td>'
-                f'<td {tdr}><span{estilo_dif}>{dif}</span></td></tr>'
-            )
-
-        diferencia_control = sin_control_odoo - sin_control_feed
-        tabla_consistencia = (
-            f'<table style="border-collapse:collapse; font-size:0.85rem;">'
-            f'<tr><th {th}>Concepto</th><th {th}>Cantidad</th>'
-            f'<th {th}>Monto Archivo</th><th {th}>Monto Odoo</th>'
-            f'<th {th}>Diferencia</th></tr>'
-            + _fila('Filas leídas', _n(len(self.linea_ids)))
-            + _fila('Facturas creadas', _n(creadas))
-            + _fila('Facturas rechazadas (ver desglose por motivo más abajo)',
-                    _n(len(self.linea_ids) - creadas))
-            + _fila('Facturas sin Retención generada en SmartIVA (ver desglose más abajo)',
-                    _n(creadas - retenciones_creadas))
-            + _fila('Facturas con monto retenido y Retención creada como Confirmado',
-                    _n(retenciones_confirmadas_bucket), _m(monto_feed_confirmadas),
-                    _m(monto_odoo_confirmadas),
-                    _m(diferencia_confirmadas) if abs(diferencia_confirmadas) > 0.01 else 'cuadra',
-                    color='#dc3545' if abs(diferencia_confirmadas) > 0.01 else '#198754')
-            + _fila('Facturas sin monto retenido y Retención creada como No Recibido/Vencido',
-                    _n(retenciones_pendientes_bucket), '—', _m(monto_odoo_pendientes))
-            + _fila('Retenciones SIN N° de Control (retención forzada al 100%, regla legal SPE)',
-                    _n(sin_control_n), _m(sin_control_feed), _m(sin_control_odoo),
-                    _m(diferencia_control) if abs(diferencia_control) > 0.01 else 'cuadra',
-                    color='#dc3545' if abs(diferencia_control) > 0.01 else '#198754')
-            + _fila('Retenciones creadas (total)', _n(retenciones_creadas), '—',
-                    _m(monto_odoo_confirmadas + monto_odoo_pendientes))
-            + '</table>'
-        )
-
-        # Estados de las Retenciones — pedido explícito 2026-08-06, con
-        # columna Monto y separada de "Facturas sin Retención" agregado
-        # explícito 2026-08-11: "Confirmado · c/Dif" etc. son estados de
-        # una retención que SÍ existe (ve.wh.iva real) -- mezclarlos en la
-        # misma tabla con las filas de "Sin Retención" (que no tienen
-        # NINGÚN registro) confundía la lectura, ver conversación.
-        _ESTADO_RECEPCION_LABEL = {
-            'esperado': 'No Recibido', 'vencido': 'Vencido',
-            'recibido': 'Recibido', 'recibido_dif': 'Recibido · c/Dif',
-            'confirmado': 'Confirmado', 'confirmado_dif': 'Confirmado · c/Dif',
-            'anulado': 'Anulado',
-        }
-        filas_estado = ''.join(
-            f'<tr><td {td}>{_ESTADO_RECEPCION_LABEL.get(estado, estado)}</td>'
-            f'<td {tdr}>{_n(n)}</td>'
-            f'<td {tdr}>{_m(monto_por_estado_recepcion.get(estado, 0.0))}</td></tr>'
-            for estado, n in sorted(por_estado_recepcion.items(), key=lambda kv: -kv[1])
-        )
-        tabla_estados = (
-            f'<table style="border-collapse:collapse; font-size:0.85rem;">'
-            f'<tr><th {th}>Estado de la Retención</th><th {th}>Cantidad</th>'
-            f'<th {th}>Monto Retenido (Odoo)</th></tr>'
-            + filas_estado
-            + f'<tr style="font-weight:700; border-top:2px solid #999;">'
-              f'<td {td}>TOTAL Retenciones Generadas</td>'
-              f'<td {tdr}>{_n(retenciones_creadas)}</td>'
-              f'<td {tdr}>{_m(monto_odoo_confirmadas + monto_odoo_pendientes)}</td></tr>'
-            + '</table>'
-        )
 
         # Facturas SIN Retención generada — desglose por motivo (NO es un
         # "estado" de una retención, es la ausencia total de un registro
@@ -1792,6 +1745,13 @@ class VeConectaCargaVentas(models.Model):
         # SÍ es Agente de Retención pero el hook nativo no generó nada).
         sin_ret_agente_true = sin_ret_agente_false = 0
         base_agente_true = base_agente_false = 0.0
+        # Cuántas de estas líneas SÍ traían un monto de retención en el
+        # archivo pese a no habérsele generado ninguna retención real --
+        # pedido explícito 2026-08-28: esa plata "desaparecía" sin
+        # explicación de la comparación Archivo vs. SmartIVA. Se muestra
+        # como fila aparte en Tabla 2 (Sin Retención Generada), no acá.
+        sin_ret_con_monto_n = 0
+        sin_ret_con_monto_archivo = 0.0
         for linea in sin_retencion_lineas:
             base = linea.base_16 + linea.base_8
             if linea.partner_id and linea.partner_id.es_agente_retencion:
@@ -1800,6 +1760,9 @@ class VeConectaCargaVentas(models.Model):
             else:
                 sin_ret_agente_false += 1
                 base_agente_false += base
+            if abs(linea.monto_retenido) > 0.01:
+                sin_ret_con_monto_n += 1
+                sin_ret_con_monto_archivo += linea.monto_retenido
         sin_retencion = len(sin_retencion_lineas)
 
         # Rechazadas — pedido explícito 2026-08-20: la tabla de abajo antes
@@ -1822,13 +1785,30 @@ class VeConectaCargaVentas(models.Model):
             bucket['base'] += linea.base_16 + linea.base_8 + linea.base_exento
         rechazadas = len(rechazadas_lineas)
 
-        # CHEQUEO ahora contra Filas Leídas (universo completo del archivo),
-        # no solo contra Facturas creadas -- pedido explícito: Retenciones
-        # Generadas + Sin Retención + Rechazadas debe sumar Filas Leídas.
+        # CHEQUEO contra Filas Leídas (universo completo del archivo):
+        # Retenciones Generadas (Tabla 2) + Sin Retención + Rechazadas debe
+        # sumar Filas Leídas -- pedido explícito.
         total_filas = len(self.linea_ids)
         no_generadas = sin_retencion + rechazadas
         suma_cuadra = (retenciones_creadas + no_generadas) == total_filas
 
+        # ══ Tabla 1 — Facturas ══════════════════════════════════════════
+        # Nivel factura: creación + rechazo + sin retención, con Base
+        # Imponible Archivo/SmartIVA/Diferencia en "Facturas creadas"
+        # (antes vivía en una tabla aparte "Montos: Archivo vs. Odoo") --
+        # pedido explícito 2026-08-28, para no tener que saltar de tabla
+        # para ver ese cuadre.
+        def _fila1(concepto, cant, b_archivo='—', b_smartiva='—', dif='—', color=None):
+            estilo_dif = f' style="color:{color};"' if color else ''
+            return (
+                f'<tr><td {td}>{concepto}</td>'
+                f'<td {tdr}>{cant}</td>'
+                f'<td {tdr}>{b_archivo}</td>'
+                f'<td {tdr}>{b_smartiva}</td>'
+                f'<td {tdr}><span{estilo_dif}>{dif}</span></td></tr>'
+            )
+
+        dif_base = base_odoo_tot - base_archivo_tot
         filas_rechazadas_html = ''
         # Orden fijo (no por cantidad) para que la tabla no "salte" de
         # posición entre cargas distintas -- más fácil de leer de un
@@ -1840,65 +1820,101 @@ class VeConectaCargaVentas(models.Model):
                 continue
             b = rechazadas_por_categoria[cat]
             etiqueta = CATEGORIA_LABEL.get(cat, 'Sin categoría (revisar)')
-            filas_rechazadas_html += (
-                f'<tr><td {td}><span style="color:#dc3545;">Rechazada — {etiqueta}</span></td>'
-                f'<td {tdr}>{_n(b["n"])}</td><td {tdr}>{_m(b["base"])}</td></tr>'
-            )
+            filas_rechazadas_html += _fila1(
+                f'<span style="color:#dc3545;">Rechazada — {etiqueta}</span>',
+                _n(b['n']), _m(b['base']))
 
-        tabla_sin_retencion = (
+        base_no_generadas = (base_agente_true + base_agente_false
+                              + sum(b['base'] for b in rechazadas_por_categoria.values()))
+        tabla_1_facturas = (
             f'<table style="border-collapse:collapse; font-size:0.85rem;">'
-            f'<tr><th {th}>Motivo</th><th {th}>Cantidad</th>'
-            f'<th {th}>Base Imponible (informativa)</th></tr>'
-            f'<tr><td {td}>Cliente NO es Agente de Retención (no le correspondía retener)</td>'
-            f'<td {tdr}>{_n(sin_ret_agente_false)}</td><td {tdr}>{_m(base_agente_false)}</td></tr>'
-            f'<tr><td {td}><span style="color:#dc3545;">Cliente SÍ es Agente de Retención pero no '
-            f'se generó retención (revisar)</span></td>'
-            f'<td {tdr}>{_n(sin_ret_agente_true)}</td><td {tdr}>{_m(base_agente_true)}</td></tr>'
+            f'<tr><th {th}>Concepto</th><th {th}>Cantidad</th>'
+            f'<th {th}>Base Imponible (Archivo)</th><th {th}>Base Imponible (SmartIVA)</th>'
+            f'<th {th}>Diferencia</th></tr>'
+            + _fila1('Filas leídas', _n(total_filas))
+            + _fila1('Facturas creadas', _n(creadas), _m(base_archivo_tot), _m(base_odoo_tot),
+                     _m(dif_base) if abs(dif_base) > 0.01 else 'cuadra',
+                     color='#dc3545' if abs(dif_base) > 0.01 else '#198754')
             + filas_rechazadas_html
+            + _fila1('Sin Retención — Cliente NO es Agente de Retención (no le correspondía retener)',
+                     _n(sin_ret_agente_false), _m(base_agente_false))
+            + _fila1('<span style="color:#dc3545;">Sin Retención — Cliente SÍ es Agente de '
+                     'Retención pero no se generó (revisar)</span>',
+                     _n(sin_ret_agente_true), _m(base_agente_true))
             + f'<tr style="font-weight:700; border-top:2px solid #999;">'
-              f'<td {td}>TOTAL Sin Retención + Rechazadas</td>'
+              f'<td {td}>TOTAL Rechazadas + Sin Retención</td>'
               f'<td {tdr}>{_n(no_generadas)}</td>'
-              f'<td {tdr}>{_m(base_agente_true + base_agente_false + sum(b["base"] for b in rechazadas_por_categoria.values()))}</td></tr>'
+              f'<td {tdr}>{_m(base_no_generadas)}</td><td {tdr}>—</td><td {tdr}>—</td></tr>'
             + '</table>'
             + f'<p style="font-size:0.75rem; color:#666;">CHEQUEO: Retenciones Generadas '
-              f'({_n(retenciones_creadas)}) + Sin Retención + Rechazadas ({_n(no_generadas)}) = '
+              f'(Tabla 2: {_n(retenciones_creadas)}) + Sin Retención + Rechazadas '
+              f'({_n(no_generadas)}) = '
               f'<span style="color:{"#198754" if suma_cuadra else "#dc3545"};">'
               f'{_n(retenciones_creadas + no_generadas)}</span> '
               f'— debe cuadrar con Filas Leídas ({_n(total_filas)})</p>'
         )
 
-        # Tabla "Estimadas vs. Retenido Real" ELIMINADA (pedido explícito
-        # 2026-08-20) -- confundía más de lo que aclaraba en la demo. La
-        # comparación real Excel/Odoo ya vive en "Montos: Archivo vs. Odoo"
-        # (arriba) y "Retenciones SIN N° de Control" (tabla Consistencia).
-
-        # Montos: Archivo vs. Odoo — pedido explícito 2026-08-06, 2 filas
-        # (Archivo/Odoo) + 1 de Diferencia, mismas 3 columnas que ya usa la
-        # vista "Facturas con Diferencia" (Base Imponible, Monto IVA, Monto
-        # Retenido) -- para toda la carga, no solo las filas con diferencia.
-        retenido_odoo_tot = monto_odoo_confirmadas + monto_odoo_pendientes
-
-        def _fila_monto(etiqueta, base, iva, retenido, color=None):
-            estilo = f' style="color:{color};"' if color else ''
+        # ══ Tabla 2 — Retenciones ═══════════════════════════════════════
+        # Todo el desglose de retenciones + todas las diferencias en un
+        # solo lugar (antes repartido entre "Consistencia", "Estado
+        # Actual" y parte de "Montos: Archivo vs. Odoo") -- pedido
+        # explícito 2026-08-28. Cantidad Archivo/SmartIVA para dejar ver
+        # de un vistazo cuántas filas intentaron algo (Archivo) vs. cuántas
+        # terminaron realmente así en SmartIVA, sin tener que cruzar con
+        # otra tabla (ej. Confirmado vs. Recibido c/Dif).
+        def _fila2(concepto, cant_a, cant_s, m_a, m_s, dif, color=None, bold=False, indent=False):
+            estilo_dif = f' style="color:{color};"' if color else ''
+            estilo_fila = ' style="font-weight:700; border-top:2px solid #999;"' if bold else ''
+            pad = 'padding-left:24px;' if indent else ''
             return (
-                f'<tr><td {td}><span{estilo}>{etiqueta}</span></td>'
-                f'<td {tdr}><span{estilo}>{_m(base)}</span></td>'
-                f'<td {tdr}><span{estilo}>{_m(iva)}</span></td>'
-                f'<td {tdr}><span{estilo}>{_m(retenido)}</span></td></tr>'
+                f'<tr{estilo_fila}><td style="border:1px solid #ccc; padding:3px 8px; {pad}">'
+                f'{concepto}</td>'
+                f'<td {tdr}>{cant_a}</td><td {tdr}>{cant_s}</td>'
+                f'<td {tdr}>{m_a}</td><td {tdr}>{m_s}</td>'
+                f'<td {tdr}><span{estilo_dif}>{dif}</span></td></tr>'
             )
 
-        dif_base = base_odoo_tot - base_archivo_tot
-        dif_iva = iva_odoo_tot - iva_archivo_tot
-        dif_retenido = retenido_odoo_tot - retenido_archivo_tot
-        tabla_montos = (
+        def _dif_o_cuadra(m_a, m_s):
+            d = m_s - m_a
+            return (_m(d) if abs(d) > 0.01 else 'cuadra'), ('#dc3545' if abs(d) > 0.01 else '#198754')
+
+        retenido_archivo_tot = con_control_feed + sin_control_feed + sin_ret_con_monto_archivo
+        retenido_smartiva_tot = con_control_smartiva + sin_control_smartiva
+        dif_tot_txt, dif_tot_color = _dif_o_cuadra(retenido_archivo_tot, retenido_smartiva_tot)
+
+        filas_con_control = ''
+        for b in BUCKET_ORDEN:
+            slot = tally[True][b]
+            if slot['n'] == 0 and b not in ('confirmado', 'retenido_s_comprobante', 'recibido_dif'):
+                continue
+            dif_txt, color = _dif_o_cuadra(slot['archivo'], slot['smartiva'])
+            filas_con_control += _fila2(
+                BUCKET_LABEL[b], _n(slot['n']), _n(slot['n']),
+                _m(slot['archivo']), _m(slot['smartiva']), dif_txt, color=color, indent=True)
+
+        dif_con_txt, dif_con_color = _dif_o_cuadra(con_control_feed, con_control_smartiva)
+        dif_sin_txt, dif_sin_color = _dif_o_cuadra(sin_control_feed, sin_control_smartiva)
+
+        tabla_2_retenciones = (
             f'<table style="border-collapse:collapse; font-size:0.85rem;">'
-            f'<tr><th {th}></th><th {th}>Base Imponible</th>'
-            f'<th {th}>Monto IVA</th><th {th}>Monto Retenido</th></tr>'
-            + _fila_monto('Leído del Archivo', base_archivo_tot, iva_archivo_tot, retenido_archivo_tot)
-            + _fila_monto('Odoo', base_odoo_tot, iva_odoo_tot, retenido_odoo_tot)
-            + _fila_monto('Diferencia', dif_base, dif_iva, dif_retenido,
-                          color='#198754' if not (abs(dif_base) > 0.01 or abs(dif_iva) > 0.01
-                                                   or abs(dif_retenido) > 0.01) else '#dc3545')
+            f'<tr><th {th}>Concepto</th><th {th}>Cant. Archivo</th><th {th}>Cant. SmartIVA</th>'
+            f'<th {th}>Monto Archivo</th><th {th}>Monto SmartIVA</th><th {th}>Diferencia</th></tr>'
+            + _fila2('Retenciones generadas en SmartIVA (total)', _n(retenciones_creadas),
+                     _n(retenciones_creadas), '—', _m(retenido_smartiva_tot), '—', bold=True)
+            + _fila2('<b>Con N° de Control</b>', _n(con_control_n), _n(con_control_n),
+                     _m(con_control_feed), _m(con_control_smartiva), dif_con_txt, color=dif_con_color)
+            + filas_con_control
+            + _fila2('Sin N° de Control (forzada al 100%, regla legal SPE)',
+                     _n(sin_control_n), _n(sin_control_n),
+                     _m(sin_control_feed), _m(sin_control_smartiva), dif_sin_txt, color=dif_sin_color)
+            + _fila2('Sin Retención Generada (archivo trae monto, SmartIVA no generó '
+                     'retención — ver Tabla 1 por el motivo)',
+                     _n(sin_ret_con_monto_n), _n(0), _m(sin_ret_con_monto_archivo), _m(0.0),
+                     _m(-sin_ret_con_monto_archivo) if sin_ret_con_monto_archivo else 'cuadra',
+                     color='#dc3545' if sin_ret_con_monto_archivo else '#198754')
+            + _fila2('TOTALES', _n(retenciones_creadas + sin_ret_con_monto_n), _n(retenciones_creadas),
+                     _m(retenido_archivo_tot), _m(retenido_smartiva_tot), dif_tot_txt,
+                     color=dif_tot_color, bold=True)
             + '</table>'
         )
 
@@ -1943,8 +1959,8 @@ class VeConectaCargaVentas(models.Model):
                 f'<th {th}>Facturas Creadas</th><th {th}>Retenciones Confirmadas</th>'
                 f'<th {th}>Total c/IVA (Archivo)</th><th {th}>Monto IVA (Archivo)</th>'
                 f'<th {th}>Monto Retenido (Archivo)</th>'
-                f'<th {th}>Total c/IVA (Odoo)</th><th {th}>Monto IVA (Odoo)</th>'
-                f'<th {th}>Monto Retenido (Odoo)</th><th {th}>Resultado</th></tr>'
+                f'<th {th}>Total c/IVA (SmartIVA)</th><th {th}>Monto IVA (SmartIVA)</th>'
+                f'<th {th}>Monto Retenido (SmartIVA)</th><th {th}>Resultado</th></tr>'
                 + ''.join(_fila_zona(zona, b) for zona, b in zonas_ordenadas)
                 + _fila_zona('TOTAL', total_b)
                 + '</table>'
@@ -1957,14 +1973,13 @@ class VeConectaCargaVentas(models.Model):
                     'solo con Monto Retenido.</p>'
                 )
 
-        tabla_detalle = (
+        tabla_3_detalle = (
             f'<table style="border-collapse:collapse; font-size:0.85rem;">'
             f'<tr><th {th}>Concepto</th><th {th}>Valor</th></tr>'
             f'<tr><td {td}>Pagos registrados (EstadoPago="Pagada")</td>'
             f'<td {tdr}>{_n(pagos_registrados)}</td></tr>'
             f'<tr><td {td}>Retenciones recibidas con N° de Comprobante real '
-            f'(confirmadas si el monto coincidía con Odoo, si no quedan '
-            f'Recibidas c/Dif para revisar)</td>'
+            f'(desglose Confirmado/Recibido c/Dif en Tabla 2)</td>'
             f'<td {tdr}>{_n(retenciones_confirmadas)}</td></tr>'
             f'<tr><td {td}>Retenciones vinculadas a su período (por fecha de factura)</td>'
             f'<td {tdr}>{_n(n_vinculadas)} — {", ".join(sorted(periodos_usados)) or "—"}</td></tr>'
@@ -1990,12 +2005,10 @@ class VeConectaCargaVentas(models.Model):
             + (f'<b>Filas bloqueadas pendientes (sin procesar, ver "Ver '
                f'Duplicadas (Revisar)"):</b> {len(bloqueadas)}<br/>' if bloqueadas else '')
             + '<br/>'
-            f'<b>— Consistencia —</b><br/>{tabla_consistencia}<br/>'
-            f'<b>— Retenciones Generadas — Estado Actual —</b><br/>{tabla_estados}<br/>'
-            f'<b>— Facturas SIN Retención Generada y Rechazadas — Desglose por Motivo —</b><br/>{tabla_sin_retencion}<br/>'
-            f'<b>— Montos: Archivo vs. Odoo —</b><br/>{tabla_montos}<br/>'
+            f'<b>— Tabla 1: Facturas —</b><br/>{tabla_1_facturas}<br/>'
+            f'<b>— Tabla 2: Retenciones —</b><br/>{tabla_2_retenciones}<br/>'
             + (f'<b>— Consistencia por Zona —</b><br/>{tabla_zona}<br/>' if hay_zonas else '')
-            + f'<b>— Detalle —</b><br/>{tabla_detalle}'
+            + f'<b>— Tabla 3: Detalle —</b><br/>{tabla_3_detalle}'
         )
         if errores:
             cuerpo += '<br/><b>Filas con error:</b><br/>' + '<br/>'.join(errores)

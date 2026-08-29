@@ -1,6 +1,6 @@
 {
     'name': 'Venezuela - Retenciones IVA',
-    'version': '19.0.2.14.176',
+    'version': '19.0.2.14.177',
     'category': 'Accounting/Localizations',
     'summary': 'Retenciones IVA Venezuela – DJCS',
     'description': '''
