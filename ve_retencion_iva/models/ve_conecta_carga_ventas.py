@@ -1058,8 +1058,7 @@ class VeConectaCargaVentas(models.Model):
             [('account_type', '=', 'liability_payable'),
              ('company_ids', 'in', [self.company_id.id])], limit=1)
 
-        creadas = nuevos_partners = nuevos_agentes = pagos_registrados = 0
-        retenciones_confirmadas = n_anulacion_omitida = n_notas_credito = 0
+        creadas = 0
         errores = []
         # (wh_id, monto_retenido del feed en esa fila) por cada retención
         # creada en esta carga — el bucket final (Confirmado vs No
@@ -1199,7 +1198,6 @@ class VeConectaCargaVentas(models.Model):
                             nc.action_post()
                         linea.invoice_id = nc.id
                         creadas += 1
-                        n_notas_credito += 1
                         # Bug real encontrado 2026-08-20: esta rama nunca
                         # revisaba si el hook nativo generó (o no) una
                         # ve.wh.iva para la Nota de Crédito -- sin esto, una
@@ -1238,7 +1236,6 @@ class VeConectaCargaVentas(models.Model):
                     # -- comportamiento original sin cambios por ahora
                     # (se omite sin crear nada), pendiente de extender
                     # también a Nota de Crédito.
-                    n_anulacion_omitida += 1
                     continue
             partner = linea.partner_id
             partner_creado = agente_marcado = False
@@ -1292,12 +1289,10 @@ class VeConectaCargaVentas(models.Model):
                 if payable_acct:
                     vals_partner['property_account_payable_id'] = payable_acct.id
                 partner = Partner.with_company(self.company_id).create(vals_partner)
-                nuevos_partners += 1
                 partner_creado = True
                 if linea.rif:
                     partners_creados_lote[rif_key] = partner
                 if es_agente_este_rif:
-                    nuevos_agentes += 1
                     agente_marcado = True
             else:
                 # Autocorrige el RIF guardado en un cliente ya existente si
@@ -1311,7 +1306,6 @@ class VeConectaCargaVentas(models.Model):
                     partner.vat = rif_fmt
                 if es_agente_este_rif and not partner.es_agente_retencion:
                     partner.es_agente_retencion = True
-                    nuevos_agentes += 1
                     agente_marcado = True
                 # Ratchet Sí > No > blanco -- nunca se sobreescribe con un
                 # valor de menor prioridad (ver _VALIDADO_PRIORIDAD).
@@ -1496,7 +1490,6 @@ class VeConectaCargaVentas(models.Model):
                             wh.action_recibir()
                             if abs(linea.monto_retenido - wh.monto_retenido) <= 0.01:
                                 wh.action_confirmar()
-                        retenciones_confirmadas += 1
                     except Exception as exc:
                         errores.append(
                             f'Fila {linea.fila}: factura creada pero la retención no se pudo '
@@ -1515,7 +1508,6 @@ class VeConectaCargaVentas(models.Model):
                             active_model='account.move', active_ids=inv.ids,
                         ).create({'payment_date': linea.fecha or fields.Date.today()})
                         pago_wizard._create_payments()
-                    pagos_registrados += 1
                 except Exception as exc:
                     errores.append(f'Fila {linea.fila}: factura creada pero el pago no se pudo '
                                     f'registrar (EstadoPago="{linea.estado_pago}"): {exc}')
@@ -1542,8 +1534,6 @@ class VeConectaCargaVentas(models.Model):
         # contra el rango real de fechas de la quincena. Ahora cada
         # huérfana se vincula al período de SU propia `invoice_id.
         # invoice_date` (ver ve.conciliacion.periodo::_asegurar_periodo).
-        n_vinculadas = 0
-        periodos_usados = set()
         Periodo = self.env['ve.conciliacion.periodo'].sudo()
         huerfanas = self.env['ve.wh.iva'].sudo().search([
             ('company_id', '=', self.company_id.id), ('conciliacion_id', '=', False),
@@ -1552,8 +1542,6 @@ class VeConectaCargaVentas(models.Model):
             fecha_factura = (wh.invoice_id.invoice_date if wh.invoice_id else False) or fields.Date.today()
             periodo = Periodo._asegurar_periodo(self.company_id, fecha_factura)
             wh.conciliacion_id = periodo.id
-            periodos_usados.add(periodo.periodo_retencion)
-            n_vinculadas += 1
 
         # Sincronizar Vencido de inmediato — sin esto, una carga histórica
         # (facturas cuya Fecha Límite ya pasó, ej. un Libro de Ventas de un
@@ -1973,29 +1961,6 @@ class VeConectaCargaVentas(models.Model):
                     'solo con Monto Retenido.</p>'
                 )
 
-        tabla_3_detalle = (
-            f'<table style="border-collapse:collapse; font-size:0.85rem;">'
-            f'<tr><th {th}>Concepto</th><th {th}>Valor</th></tr>'
-            f'<tr><td {td}>Pagos registrados (EstadoPago="Pagada")</td>'
-            f'<td {tdr}>{_n(pagos_registrados)}</td></tr>'
-            f'<tr><td {td}>Retenciones recibidas con N° de Comprobante real '
-            f'(desglose Confirmado/Recibido c/Dif en Tabla 2)</td>'
-            f'<td {tdr}>{_n(retenciones_confirmadas)}</td></tr>'
-            f'<tr><td {td}>Retenciones vinculadas a su período (por fecha de factura)</td>'
-            f'<td {tdr}>{_n(n_vinculadas)} — {", ".join(sorted(periodos_usados)) or "—"}</td></tr>'
-            f'<tr><td {td}>Clientes nuevos (marcados Agente de Retención)</td>'
-            f'<td {tdr}>{_n(nuevos_partners)} ({_n(nuevos_agentes)})</td></tr>'
-            f'<tr><td {td}>Notas de Crédito creadas (Anulación real de un Registro '
-            f'-- mismo archivo u otra carga con factura ya existente, N° Documento '
-            f'tal cual el archivo)</td>'
-            f'<td {tdr}>{_n(n_notas_credito)}</td></tr>'
-            f'<tr><td {td}>Pares Registro + Anulación omitidos (emparejados solo por '
-            f'monto contra una factura preexistente, sin línea hermana — no es '
-            f'duplicado real, ver "Filas con error" para el detalle fila por fila)</td>'
-            f'<td {tdr}>{_n(n_anulacion_omitida)}</td></tr>'
-            f'</table>'
-        )
-
         titulo = ('Carga de Libro de Ventas confirmada CON DISCREPANCIAS'
                   if bloqueadas else 'Carga de Libro de Ventas confirmada')
         cuerpo = (
@@ -2008,7 +1973,6 @@ class VeConectaCargaVentas(models.Model):
             f'<b>— Tabla 1: Facturas —</b><br/>{tabla_1_facturas}<br/>'
             f'<b>— Tabla 2: Retenciones —</b><br/>{tabla_2_retenciones}<br/>'
             + (f'<b>— Consistencia por Zona —</b><br/>{tabla_zona}<br/>' if hay_zonas else '')
-            + f'<b>— Tabla 3: Detalle —</b><br/>{tabla_3_detalle}'
         )
         if errores:
             cuerpo += '<br/><b>Filas con error:</b><br/>' + '<br/>'.join(errores)

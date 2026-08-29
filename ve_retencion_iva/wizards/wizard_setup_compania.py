@@ -298,6 +298,19 @@ class VeWizardSetupCompania(models.TransientModel):
         if not banco.suspense_account_id:
             banco.suspense_account_id = transitoria.id
             log.append('+ "Cuenta Transitoria" (Diario Banco) → 1132001')
+        elif not banco.suspense_account_id.reconcile:
+            # Bug real encontrado 2026-08-29 (INGREDIA): la cuenta YA estaba
+            # asignada (configurada a mano antes de que este wizard supiera
+            # de `suspense_account_id`) pero sin "Permitir Conciliación" --
+            # account.payment.register._get_outstanding_account() la trata
+            # como si no existiera y falla con el mismo "No se encontró
+            # ninguna cuenta pendiente para realizar el pago", aunque el
+            # campo esté lleno. El chequeo "si no está vacío, no la toco" no
+            # alcanza -- hay que corregir también una cuenta ya asignada
+            # pero mal configurada.
+            banco.suspense_account_id.reconcile = True
+            log.append('+ "Cuenta Transitoria" ya estaba asignada pero sin '
+                        '"Permitir Conciliación" -- activado')
         else:
             log.append('= "Cuenta Transitoria" ya estaba configurada')
 
