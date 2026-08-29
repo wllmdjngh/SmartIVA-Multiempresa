@@ -271,11 +271,42 @@ class VeWizardSetupCompania(models.TransientModel):
 
         # Sin esto, account.payment.register (registrar pagos, ej. desde
         # CONECTA-14 con EstadoPago=Pagada) no tiene dónde postear el pago.
-        if not Journal.search([('type', '=', 'bank'), ('company_id', '=', company.id)], limit=1):
-            Journal.create({'name': 'Banco', 'type': 'bank', 'code': 'BNK', 'company_id': company.id})
+        banco = Journal.search([('type', '=', 'bank'), ('company_id', '=', company.id)], limit=1)
+        if not banco:
+            banco = Journal.create({'name': 'Banco', 'type': 'bank', 'code': 'BNK', 'company_id': company.id})
             log.append('+ Diario de Banco creado (para registrar pagos)')
         else:
             log.append('= Diario de Banco ya existía')
+
+        # Bug real encontrado 2026-08-29 (proyecto SmartIVA-Multiempresa,
+        # compañías Purolomo/INGREDIA): crear el diario Banco NO le asigna
+        # "Cuenta de Cobros Pendientes"/"Cuenta de Pagos Pendientes"
+        # (outstanding_receipts_account_id/outstanding_payments_account_id)
+        # -- quedan en blanco. Sin ellas, account.payment.register no tiene
+        # dónde anotar el cobro/pago transitorio y falla con "No se
+        # encontró ninguna cuenta pendiente para realizar el pago" en
+        # cualquier carga con EstadoPago=Pagado, aunque la factura se haya
+        # posteado bien. Idempotente: solo completa lo que esté vacío,
+        # igual que el resto del wizard.
+        cobros_pend, msg = self._asegurar_cuenta(
+            company, '1132001', 'Cobros Pendientes', 'asset_current', reconcile=True)
+        log.append(msg)
+
+        pagos_pend, msg = self._asegurar_cuenta(
+            company, '2112001', 'Pagos Pendientes', 'liability_current', reconcile=True)
+        log.append(msg)
+
+        if not banco.outstanding_receipts_account_id:
+            banco.outstanding_receipts_account_id = cobros_pend.id
+            log.append('+ "Cuenta de Cobros Pendientes" (Diario Banco) → 1132001')
+        else:
+            log.append('= "Cuenta de Cobros Pendientes" ya estaba configurada')
+
+        if not banco.outstanding_payments_account_id:
+            banco.outstanding_payments_account_id = pagos_pend.id
+            log.append('+ "Cuenta de Pagos Pendientes" (Diario Banco) → 2112001')
+        else:
+            log.append('= "Cuenta de Pagos Pendientes" ya estaba configurada')
 
         # ── Cuentas IVA — mismo par (1151004/2172003) que ya documenta
         #    README.md y busca post_init_hook al instalar el módulo. Sirven
