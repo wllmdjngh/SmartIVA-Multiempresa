@@ -71,6 +71,17 @@ class VeEnviarRecordatorioWizard(models.TransientModel):
                 vals['phone'] = self.phone
             if self.email != self.contacto_id.email:
                 vals['email'] = self.email
+            # Si el contacto viene del "Crear" rápido del propio selector
+            # (el usuario escribió el nombre directo en el campo Contacto
+            # en vez de dejarlo vacío) Odoo lo crea sin parent_id -- el
+            # domain del campo no se aplica al quick-create. Re-vincularlo
+            # acá cubre ese caso (y cualquier otro contacto ya existente
+            # que no estuviera bajo esta empresa) sin depender de que el
+            # usuario use el flujo "correcto".
+            if self.contacto_id.parent_id != self.partner_id:
+                vals['parent_id'] = self.partner_id.id
+                vals['company_type'] = 'person'
+                vals['company_id'] = self.partner_id.company_id.id
             if vals:
                 self.contacto_id.write(vals)
             return self.contacto_id

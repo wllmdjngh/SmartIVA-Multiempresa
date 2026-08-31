@@ -10,7 +10,8 @@
                     <field name="wh_iva_id" invisible="1"/>
                     <group>
                         <field name="partner_id" readonly="1"/>
-                        <field name="contacto_id" placeholder="Elegir contacto existente, o dejar vacío para uno nuevo..."/>
+                        <field name="contacto_id" placeholder="Elegir contacto existente, o dejar vacío para uno nuevo..."
+                               options="{'no_create': True, 'no_create_edit': True}"/>
                         <field name="contacto_nombre" string="Nombre del Contacto"/>
                         <field name="phone" widget="phone"/>
                         <field name="email" widget="email"/>
