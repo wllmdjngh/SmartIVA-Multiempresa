@@ -1578,6 +1578,14 @@ class VeConectaCargaVentas(models.Model):
                         'bloqueante': False,
                     })
                 continue
+            elif (linea.categoria_discrepancia == 'doc_afectado_no_encontrado'
+                  and (linea.base_16 or 0) + (linea.base_8 or 0) + (linea.base_exento or 0) < 0):
+                # NC (Tipo de Transacción '03') cuyo Documento Afectado no
+                # matcheó ninguna factura -- no se inventa el vínculo, y no
+                # se intenta postear como factura regular (Odoo rechaza un
+                # total negativo). Queda sin invoice_id, visible en la
+                # pestaña Discrepancias para revisión manual. 2026-09-03.
+                continue
             partner = linea.partner_id
             partner_creado = agente_marcado = False
             rif_key = _norm_rif(linea.rif) if linea.rif else False
