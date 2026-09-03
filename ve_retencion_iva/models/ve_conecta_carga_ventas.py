@@ -279,6 +279,53 @@ def _retencion_ya_declarada(env, retencion):
         lambda s: s.nro_control and Periodo._norm_ctrl(s.nro_control) == norm_ctrl))
 
 
+def _crear_ajuste_nc_negativo(env, retencion_afectada, nc, factura_afectada,
+                               monto_base_16, monto_iva_16, monto_base_8, monto_iva_8, fila):
+    """Caso B (2026-09-03) -- la Nota de Crédito revierte una factura cuya
+    retención ya está confirmada/declarada. Confirmado con el contador:
+    nunca se toca lo ya practicado -- se genera un movimiento NUEVO e
+    independiente, en negativo, en el período de la propia NC (no el de
+    la factura original). Ver PROPUESTA_NOTAS_CREDITO_DEBITO.md sección
+    3.2 y TABLA_ESCENARIOS_NC.md.
+
+    Reusa el mismo % de retención de la factura original (no se
+    recalcula) -- `monto_retenido` (compute) sale negativo solo con que
+    monto_iva/monto_iva_red vengan negativos, sin tocar el % (ver
+    ve_wh_iva.py::_compute_monto_retenido). `tipo_documento='03'` es lo
+    que habilita el monto negativo en `_validar_para_confirmar`/
+    `_crear_asiento_contable` -- ver ve_wh_iva.py.
+
+    No pasa `conciliacion_id` explícito -- create() de ve.wh.iva ya
+    vincula por la fecha de `invoice_id` (acá la propia NC), que es
+    exactamente el período que corresponde."""
+    WhIva = env['ve.wh.iva']
+    ajuste = WhIva.create({
+        'name': f'AJUSTE-NC-{nc.name}',
+        'invoice_id': nc.id,
+        'partner_id': retencion_afectada.partner_id.id,
+        'nro_control': nc.nro_control or False,
+        'nro_factura': factura_afectada.name,
+        'tipo_documento': '03',
+        'doc_afectado': factura_afectada.name,
+        'zona': nc.zona or False,
+        'company_id': nc.company_id.id,
+        'monto_base': -abs(monto_base_16),
+        'monto_iva': -abs(monto_iva_16),
+        'monto_base_red': -abs(monto_base_8),
+        'monto_iva_red': -abs(monto_iva_8),
+        'porcentaje_retencion': retencion_afectada.porcentaje_retencion,
+    })
+    ajuste.action_confirmar()
+    ajuste.message_post(
+        body=(f'Ajuste automático — la Nota de Crédito {nc.name} (fila {fila}) '
+              f'revierte la factura {factura_afectada.name}, cuya retención ya '
+              f'estaba {retencion_afectada.state}/declarada. Este movimiento '
+              f'nuevo, en el período de la propia NC, refleja el efecto sin '
+              f'modificar el comprobante original.'),
+        message_type='comment', subtype_xmlid='mail.mt_note')
+    return ajuste
+
+
 # Mapeo de encabezados reconocidos — CONECTA-13: columnas del Libro de Ventas
 # que el motor necesita (ver REQUISITOS.md sección 11, Bloque 1). Extender
 # esta lista con los sinónimos que use cada cliente real, en vez de construir
@@ -1324,25 +1371,44 @@ class VeConectaCargaVentas(models.Model):
                                 # Caso B: ya practicada/declarada -- NO se
                                 # toca (confirmado con el contador: siempre
                                 # se genera un movimiento nuevo, nunca se
-                                # reversa lo ya practicado). Crear el
-                                # movimiento nuevo en negativo requiere
-                                # decisión de diseño contable aparte (ver
-                                # nota en el chat 2026-09-03: _validar_para_
-                                # confirmar exige monto>0 y _crear_asiento_
-                                # contable no invierte débito/crédito para
-                                # negativos) -- PENDIENTE, no implementado
-                                # todavía. Por ahora solo se marca la
-                                # discrepancia para revisión manual.
+                                # reversa lo ya practicado). Reversión
+                                # total -- el ajuste espeja exacto el
+                                # monto de la retención original.
+                                # Implementado 2026-09-03, ver
+                                # _crear_ajuste_nc_negativo. Try/except
+                                # PROPIO (no el de afuera) -- la NC ya se
+                                # posteó bien en este punto, un fallo acá
+                                # no debe deshacerla ni dejar invoice_id
+                                # apuntando a un registro borrado.
+                                try:
+                                    with self.env.cr.savepoint():
+                                        _crear_ajuste_nc_negativo(
+                                            self.env, retencion_original, nc, factura_registro,
+                                            retencion_original.monto_base,
+                                            retencion_original.monto_iva,
+                                            retencion_original.monto_base_red,
+                                            retencion_original.monto_iva_red,
+                                            linea.fila,
+                                        )
+                                    detalle_ajuste = (
+                                        f'se generó un movimiento de ajuste nuevo en el '
+                                        f'período de la NC (AJUSTE-NC-{nc.name})')
+                                except Exception as exc_ajuste:
+                                    errores.append(
+                                        f'Fila {linea.fila}: Nota de Crédito creada, pero '
+                                        f'el ajuste automático de la retención falló: '
+                                        f'{exc_ajuste}')
+                                    detalle_ajuste = (
+                                        f'el ajuste automático falló ({exc_ajuste}) -- '
+                                        f'requiere corrección manual')
                                 retencion_original.write({
                                     'discrepancia_retencion_confirmada': True,
                                     'discrepancia_retencion_confirmada_detalle': (
                                         f'Nota de Crédito {nc.name} (fila {linea.fila}) '
                                         f'revierte esta factura, ya '
                                         f'{retencion_original.state}/declarada -- '
-                                        f'el ajuste en el período de la NC todavía '
-                                        f'no se genera automáticamente (pendiente '
-                                        f'de diseño contable), requiere revisión '
-                                        f'y corrección manual.'),
+                                        f'{detalle_ajuste}, sin modificar este '
+                                        f'comprobante.'),
                                 })
                     except Exception as exc:
                         errores.append(f'Fila {linea.fila} (Nota de Crédito): {exc}')
@@ -1467,16 +1533,41 @@ class VeConectaCargaVentas(models.Model):
                                       f'revierte Bs. {monto_nc:,.2f} de esta factura.'),
                                 message_type='comment', subtype_xmlid='mail.mt_note')
                         elif ya_declarada:
+                            # Reversión PARCIAL -- el ajuste solo espeja el
+                            # monto que ESTA Nota de Crédito revierte
+                            # (linea.base_16/base_8), no el total de la
+                            # retención original. Implementado 2026-09-03.
+                            # Try/except PROPIO -- ver misma justificación
+                            # en el caso total, arriba en este archivo.
+                            try:
+                                with self.env.cr.savepoint():
+                                    _crear_ajuste_nc_negativo(
+                                        self.env, retencion_afectada, nc, factura_afectada,
+                                        linea.base_16 or 0.0,
+                                        round((linea.base_16 or 0.0) * 0.16, 2),
+                                        linea.base_8 or 0.0,
+                                        round((linea.base_8 or 0.0) * 0.08, 2),
+                                        linea.fila,
+                                    )
+                                detalle_ajuste = (
+                                    f'se generó un movimiento de ajuste nuevo en el '
+                                    f'período de la NC (AJUSTE-NC-{nc.name})')
+                            except Exception as exc_ajuste:
+                                errores.append(
+                                    f'Fila {linea.fila}: Nota de Crédito parcial creada, '
+                                    f'pero el ajuste automático de la retención falló: '
+                                    f'{exc_ajuste}')
+                                detalle_ajuste = (
+                                    f'el ajuste automático falló ({exc_ajuste}) -- '
+                                    f'requiere corrección manual')
                             retencion_afectada.write({
                                 'discrepancia_retencion_confirmada': True,
                                 'discrepancia_retencion_confirmada_detalle': (
                                     f'Nota de Crédito parcial {nc.name} (fila '
                                     f'{linea.fila}) revierte Bs. {monto_nc:,.2f} de '
                                     f'esta factura, ya {retencion_afectada.state}/'
-                                    f'declarada -- el ajuste en el período de la NC '
-                                    f'todavía no se genera automáticamente (pendiente '
-                                    f'de diseño contable), requiere revisión y '
-                                    f'corrección manual.'),
+                                    f'declarada -- {detalle_ajuste}, sin modificar '
+                                    f'este comprobante.'),
                             })
                 except Exception as exc:
                     errores.append(f'Fila {linea.fila} (Nota de Crédito parcial): {exc}')

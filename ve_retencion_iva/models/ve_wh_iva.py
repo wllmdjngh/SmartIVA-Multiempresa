@@ -942,8 +942,20 @@ class VeWhIva(models.Model):
                     f'El RIF del cliente ({self.partner_id.vat}) no tiene el '
                     f'formato correcto (ej: J-12345678-9).'
                 )
-        if not self.monto_retenido or self.monto_retenido <= 0:
+        if not self.monto_retenido:
             errors.append('El Monto Retenido debe ser mayor a cero.')
+        elif self.monto_retenido < 0 and self.tipo_documento != '03':
+            # Un monto negativo solo es válido para el ajuste automático
+            # que genera una Nota de Crédito sobre una retención ya
+            # confirmada/declarada (tipo_documento='03', ver
+            # _crear_ajuste_nc_negativo en ve_conecta_carga_ventas.py) --
+            # 2026-09-03. Cualquier otro comprobante con monto negativo
+            # sigue siendo un error real de dato.
+            errors.append(
+                'El Monto Retenido debe ser mayor a cero (un monto negativo '
+                'solo es válido para el ajuste automático de una Nota de '
+                'Crédito, Tipo de Transacción 03).'
+            )
         if errors:
             raise UserError('\n'.join(errors))
 
@@ -1327,6 +1339,18 @@ class VeWhIva(models.Model):
         partner_id = self.partner_id.id if self.partner_id else False
         ref = self.name or f'RET-IVA-{self.id}'
 
+        # Monto negativo (ajuste automático de Nota de Crédito sobre una
+        # retención ya confirmada/declarada, tipo_documento='03', ver
+        # _crear_ajuste_nc_negativo) -- invertir débito/crédito en vez de
+        # pasar un débito negativo, que no es partida doble válida.
+        # 2026-09-03.
+        monto_abs = abs(self.monto_retenido)
+        es_reversa = self.monto_retenido < 0
+        line_cobrar = {'debit': 0.0, 'credit': monto_abs} if es_reversa \
+            else {'debit': monto_abs, 'credit': 0.0}
+        line_pagar = {'debit': monto_abs, 'credit': 0.0} if es_reversa \
+            else {'debit': 0.0, 'credit': monto_abs}
+
         asiento = self.env['account.move'].create({
             'move_type': 'entry',
             'ref': ref,
@@ -1338,15 +1362,13 @@ class VeWhIva(models.Model):
                     'account_id': cta_cobrar.id,
                     'name': f'IVA Retenido por Cobrar – {ref}',
                     'partner_id': partner_id,
-                    'debit': self.monto_retenido,
-                    'credit': 0.0,
+                    **line_cobrar,
                 }),
                 (0, 0, {
                     'account_id': cta_pagar.id,
                     'name': f'IVA por Pagar – {ref}',
                     'partner_id': partner_id,
-                    'debit': 0.0,
-                    'credit': self.monto_retenido,
+                    **line_pagar,
                 }),
             ],
         })
