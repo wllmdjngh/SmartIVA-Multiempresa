@@ -253,6 +253,32 @@ def _buscar_factura_por_doc_afectado(env, company, doc_afectado):
     return Move.browse()
 
 
+def _retencion_ya_declarada(env, retencion):
+    """True si la retención ya se practicó/declaró y por tanto NO se debe
+    tocar (Caso B) -- 2026-09-03, ver PROPUESTA_NOTAS_CREDITO_DEBITO.md
+    sección 1 y la corrección de la usuaria sobre `ve.seniat.retencion`
+    como mejor señal que el estado interno. Cualquiera de las 3 basta:
+    (a) `state == 'confirmado'` en Odoo, (b) su período ya quedó
+    `declarado`, o (c) ya existe un registro de Retenciones SENIAT
+    (descargado por RPA) que matchea esta factura -- prueba directa de
+    que el CLIENTE ya declaró, más confiable que el estado interno para
+    clientes que cargan meses históricos (ej. Vencement)."""
+    if retencion.state == 'confirmado':
+        return True
+    if retencion.conciliacion_id and retencion.conciliacion_id.estado == 'declarado':
+        return True
+    if not retencion.nro_control:
+        return False
+    Periodo = env['ve.conciliacion.periodo']
+    norm_ctrl = Periodo._norm_ctrl(retencion.nro_control)
+    if norm_ctrl == '0':
+        return False
+    candidatos = env['ve.seniat.retencion'].search([
+        ('company_id', '=', retencion.company_id.id)])
+    return bool(candidatos.filtered(
+        lambda s: s.nro_control and Periodo._norm_ctrl(s.nro_control) == norm_ctrl))
+
+
 # Mapeo de encabezados reconocidos — CONECTA-13: columnas del Libro de Ventas
 # que el motor necesita (ver REQUISITOS.md sección 11, Bloque 1). Extender
 # esta lista con los sinónimos que use cada cliente real, en vez de construir
@@ -1279,11 +1305,9 @@ class VeConectaCargaVentas(models.Model):
                         retencion_original = WhIva.search(
                             [('invoice_id', '=', factura_registro.id)], limit=1)
                         if retencion_original:
-                            periodo_declarado = bool(
-                                retencion_original.conciliacion_id
-                                and retencion_original.conciliacion_id.estado == 'declarado')
+                            ya_declarada = _retencion_ya_declarada(self.env, retencion_original)
                             if (retencion_original.state in ('esperado', 'vencido')
-                                    and not periodo_declarado):
+                                    and not ya_declarada):
                                 # Caso A: aún no practicada -- se puede anular
                                 # directo, mismo mecanismo ya usado y
                                 # verificado en el backfill de Vencement
@@ -1296,7 +1320,7 @@ class VeConectaCargaVentas(models.Model):
                                     ),
                                 })
                                 retencion_original.action_anular()
-                            elif retencion_original.state == 'confirmado' or periodo_declarado:
+                            elif ya_declarada:
                                 # Caso B: ya practicada/declarada -- NO se
                                 # toca (confirmado con el contador: siempre
                                 # se genera un movimiento nuevo, nunca se
@@ -1341,6 +1365,128 @@ class VeConectaCargaVentas(models.Model):
                     # (se omite sin crear nada), pendiente de extender
                     # también a Nota de Crédito.
                     continue
+            elif linea.categoria_discrepancia == 'nota_credito_parcial':
+                # Nota de Crédito PARCIAL explícita (Plan A, 2026-09-03) --
+                # detectada por Tipo de Transacción '03' + Documento
+                # Afectado, no por neteo exacto. Mismo patrón de creación
+                # que el Registro+Anulación de arriba, pero la factura
+                # afectada viene de doc_afectado, no de un par en el
+                # mismo archivo.
+                factura_afectada = _buscar_factura_por_doc_afectado(
+                    self.env, self.company_id, linea.doc_afectado)
+                if not factura_afectada:
+                    # Se re-evaluó al confirmar y ya no matchea (dato
+                    # cambió entre previsualizar y confirmar) -- no se
+                    # inventa el vínculo.
+                    errores.append(
+                        f'Fila {linea.fila}: Nota de Crédito parcial -- Documento '
+                        f'Afectado "{linea.doc_afectado}" ya no se pudo vincular '
+                        f'al confirmar.')
+                    continue
+                lineas_nc = []
+                if linea.base_16:
+                    lv = {'name': f'Nota de Crédito parcial — fila {linea.fila}',
+                          'quantity': 1, 'price_unit': abs(linea.base_16),
+                          'account_id': account.id}
+                    if tax_16:
+                        lv['tax_ids'] = [(6, 0, [tax_16.id])]
+                    lineas_nc.append((0, 0, lv))
+                if linea.base_8:
+                    lv = {'name': f'Nota de Crédito parcial 8% — fila {linea.fila}',
+                          'quantity': 1, 'price_unit': abs(linea.base_8),
+                          'account_id': account.id}
+                    if tax_8:
+                        lv['tax_ids'] = [(6, 0, [tax_8.id])]
+                    lineas_nc.append((0, 0, lv))
+                if linea.base_exento:
+                    lineas_nc.append((0, 0, {
+                        'name': f'Nota de Crédito parcial (exento) — fila {linea.fila}',
+                        'quantity': 1, 'price_unit': abs(linea.base_exento),
+                        'account_id': account.id,
+                    }))
+                nc = Move.create({
+                    'name': linea.nro_documento or linea.nro_control,
+                    'move_type': 'out_refund',
+                    'reversed_entry_id': factura_afectada.id,
+                    'partner_id': factura_afectada.partner_id.id,
+                    'invoice_date': linea.fecha or fields.Date.today(),
+                    'invoice_date_due': linea.fecha or fields.Date.today(),
+                    'journal_id': journal_nc.id,
+                    'company_id': self.company_id.id,
+                    'currency_id': self.company_id.currency_id.id,
+                    'nro_control': linea.nro_control or False,
+                    'nro_factura': linea.nro_documento or False,
+                    'zona': linea.zona or False,
+                    'invoice_line_ids': lineas_nc,
+                })
+                try:
+                    with self.env.cr.savepoint():
+                        nc.action_post()
+                    linea.invoice_id = nc.id
+                    creadas += 1
+                    wh_creada_nc = WhIva.search([('invoice_id', '=', nc.id)], limit=1)
+                    if wh_creada_nc:
+                        wh_tracking.append((wh_creada_nc.id, linea.monto_retenido))
+                        wh_creada_nc.write({
+                            'monto_retenido_archivo': linea.monto_retenido,
+                            'monto_iva_archivo': linea.monto_iva,
+                            'viene_de_libro_ventas': True,
+                        })
+                    else:
+                        sin_retencion_lineas.append(linea)
+
+                    # Tratamiento de la retención de la factura afectada --
+                    # PARCIAL: a diferencia del neteo exacto (que anula el
+                    # 100%), acá se reduce proporcionalmente en vez de
+                    # anular por completo, porque la operación no se
+                    # canceló del todo (confirmado por la lectura
+                    # normativa: Caso A = corregir el saldo pendiente al
+                    # monto neto, no generar un evento de retención aparte
+                    # -- ver PROPUESTA_NOTAS_CREDITO_DEBITO.md sección 1.4
+                    # y TABLA_ESCENARIOS_NC.md).
+                    retencion_afectada = WhIva.search(
+                        [('invoice_id', '=', factura_afectada.id)], limit=1)
+                    if retencion_afectada:
+                        ya_declarada = _retencion_ya_declarada(self.env, retencion_afectada)
+                        monto_nc = (abs(linea.base_16 or 0) + abs(linea.base_8 or 0)
+                                    + abs(linea.base_exento or 0))
+                        if (retencion_afectada.state in ('esperado', 'vencido')
+                                and not ya_declarada):
+                            base_total_previa = retencion_afectada.base_imponible_total or 0.0
+                            factor = (max(0.0, 1 - (monto_nc / base_total_previa))
+                                      if base_total_previa else 0.0)
+                            retencion_afectada.write({
+                                'monto_base': round((retencion_afectada.monto_base or 0) * factor, 2),
+                                'monto_iva': round((retencion_afectada.monto_iva or 0) * factor, 2),
+                                'monto_base_red': round((retencion_afectada.monto_base_red or 0) * factor, 2),
+                                'monto_iva_red': round((retencion_afectada.monto_iva_red or 0) * factor, 2),
+                            })
+                            retencion_afectada.message_post(
+                                body=(f'Monto reducido automáticamente -- Nota de '
+                                      f'Crédito parcial {nc.name} (fila {linea.fila}) '
+                                      f'revierte Bs. {monto_nc:,.2f} de esta factura.'),
+                                message_type='comment', subtype_xmlid='mail.mt_note')
+                        elif ya_declarada:
+                            retencion_afectada.write({
+                                'discrepancia_retencion_confirmada': True,
+                                'discrepancia_retencion_confirmada_detalle': (
+                                    f'Nota de Crédito parcial {nc.name} (fila '
+                                    f'{linea.fila}) revierte Bs. {monto_nc:,.2f} de '
+                                    f'esta factura, ya {retencion_afectada.state}/'
+                                    f'declarada -- el ajuste en el período de la NC '
+                                    f'todavía no se genera automáticamente (pendiente '
+                                    f'de diseño contable), requiere revisión y '
+                                    f'corrección manual.'),
+                            })
+                except Exception as exc:
+                    errores.append(f'Fila {linea.fila} (Nota de Crédito parcial): {exc}')
+                    nc.sudo().unlink()
+                    linea.write({
+                        'categoria_discrepancia': 'error_posteo',
+                        'brecha': f'Error al postear Nota de Crédito parcial: {str(exc)[:200]}',
+                        'bloqueante': False,
+                    })
+                continue
             partner = linea.partner_id
             partner_creado = agente_marcado = False
             rif_key = _norm_rif(linea.rif) if linea.rif else False
@@ -2528,6 +2674,8 @@ class VeConectaCargaVentasLinea(models.Model):
         ('registro_anulacion', 'Registro + Anulación'),
         ('documento_vacio', 'Documento vacío'),
         ('error_posteo', 'Error al postear'),
+        ('nota_credito_parcial', 'Nota de Crédito parcial'),
+        ('doc_afectado_no_encontrado', 'Documento Afectado no encontrado'),
     ], compute='_compute_partner_id', store=True, string='Categoría',
         help='Agrupa brecha/bloqueante en 6 categorías para la pestaña '
              'Discrepancias (2026-08-14) -- False si la fila no tiene ningún '
@@ -2929,6 +3077,34 @@ class VeConectaCargaVentasLinea(models.Model):
                 linea.bloqueante = True
                 linea.categoria_discrepancia = 'duplicada'
                 linea.brecha = 'Retención duplicada — ya existe (mismo N° Control o N° Factura)'
+            elif (linea.tipo_transaccion == '03' and linea.doc_afectado and base_propia < 0
+                  and not linea.es_anulacion_par and not linea.par_linea_id):
+                # Nota de Crédito PARCIAL explícita (Plan A, 2026-09-03) --
+                # no neteó exacto con ninguna otra fila (arriba), pero trae
+                # Tipo de Transacción '03' + Documento Afectado. No bloquea
+                # -- se procesa al confirmar (ver action_confirmar), con la
+                # misma normalización que ya exige la sección 3.7.
+                factura_nc_parcial = _buscar_factura_por_doc_afectado(
+                    self.env, company, linea.doc_afectado)
+                linea.bloqueante = False
+                if factura_nc_parcial:
+                    linea.categoria_discrepancia = 'nota_credito_parcial'
+                    linea.brecha = (f'Nota de Crédito parcial — afecta la factura '
+                                     f'{factura_nc_parcial.name}, se procesará al confirmar')
+                else:
+                    linea.categoria_discrepancia = 'doc_afectado_no_encontrado'
+                    linea.brecha = (f'Nota de Crédito — Documento Afectado '
+                                     f'"{linea.doc_afectado}" no encontrado en la compañía')
+            elif (linea.tipo_transaccion == '02' and linea.doc_afectado
+                  and not _buscar_factura_por_doc_afectado(self.env, company, linea.doc_afectado)):
+                # Nota de Débito con Documento Afectado que no matchea --
+                # movido a la vista previa (Plan A, 2026-09-03; antes solo
+                # se veía como discrepancia después de confirmar). No
+                # bloquea -- se carga igual como factura regular.
+                linea.bloqueante = False
+                linea.categoria_discrepancia = 'doc_afectado_no_encontrado'
+                linea.brecha = (f'Nota de Débito — Documento Afectado '
+                                 f'"{linea.doc_afectado}" no encontrado en la compañía')
             elif not partner:
                 linea.bloqueante = False
                 linea.categoria_discrepancia = False
