@@ -113,6 +113,11 @@ class WizardSubirComprobante(models.TransientModel):
     ocr_fecha = fields.Char(string='Fecha emisi\xf3n', readonly=True)  # Char existente — no cambiar tipo
     ocr_fecha_doc = fields.Date(string='Fecha Comprobante')             # Date editable para guardar
     ocr_tipo_documento = fields.Char(string='Tipo de Transacción')
+    ocr_doc_afectado = fields.Char(
+        string='Documento Afectado',
+        help='N° de Factura/Control que este comprobante afecta -- solo '
+             'aplica si Tipo de Transacción es Nota de Crédito/Débito '
+             '(Art. 75/76 Reglamento LIVA). Agregado 2026-09-03.')
     ocr_alicuota = fields.Float(string='Alícuota %', digits=(5, 2), default=16.0)
 
     # Informativos (no se escriben al registro)
@@ -331,6 +336,15 @@ class WizardSubirComprobante(models.TransientModel):
         if m:
             vals['ocr_tipo_documento'] = m.group(1).strip()[:50]
 
+        # ── Documento Afectado (Art. 75/76 Reglamento LIVA) ─────────────
+        m = re.search(
+            r'(?:DOCUMENTO\s*AFECTADO|FACTURA\s*AFECTADA)'
+            r'\s*[:\n]?\s*([A-Za-z0-9][^\n]{0,40})',
+            texto, re.I,
+        )
+        if m:
+            vals['ocr_doc_afectado'] = m.group(1).strip()[:50]
+
         # ── Alícuota ─────────────────────────────────────────────────────
         m = re.search(r'(?:AL[IÍ]CUOTA|ALICUOTA)\s*[:%]?\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*%?', texto, re.I)
         if m:
@@ -439,6 +453,8 @@ class WizardSubirComprobante(models.TransientModel):
             '  "nro_comprobante": "número del comprobante de retención (14 dígitos, formato aaaaMM + 8 consecutivo)",\n'
             '  "fecha_emision": "DD/MM/YYYY",\n'
             '  "tipo_transaccion": "tipo de documento o transacción (ej: Factura, Nota de Crédito)",\n'
+            '  "documento_afectado": "N° de Factura o Control que este documento afecta -- '
+            'solo si es Nota de Crédito/Débito, null si es Factura regular",\n'
             '  "periodo_fiscal": "período fiscal en formato yyyy-mm (ej: 2026-05). '
             'El agente puede escribirlo como 05/2026, Mayo 2026, 2026-05, etc.",\n'
             '  "agente_nombre": "nombre o razón social del agente de retención",\n'
@@ -512,6 +528,8 @@ class WizardSubirComprobante(models.TransientModel):
                 vals['ocr_fecha_doc'] = parsed_date
         if data.get('tipo_transaccion'):
             vals['ocr_tipo_documento'] = str(data['tipo_transaccion']).strip()[:50]
+        if data.get('documento_afectado'):
+            vals['ocr_doc_afectado'] = str(data['documento_afectado']).strip()[:50]
         if data.get('periodo_fiscal'):
             raw_p = str(data['periodo_fiscal']).strip()
             vals['ocr_periodo'] = _normalizar_periodo(raw_p) or raw_p
@@ -818,6 +836,8 @@ class WizardSubirComprobante(models.TransientModel):
             update['name'] = self.ocr_name
         if self.ocr_tipo_documento:
             update['tipo_documento'] = self.ocr_tipo_documento
+        if self.ocr_doc_afectado:
+            update['doc_afectado'] = self.ocr_doc_afectado
         if self.ocr_nro_documento:
             update['nro_documento'] = self.ocr_nro_documento
         if self.ocr_nro_control:

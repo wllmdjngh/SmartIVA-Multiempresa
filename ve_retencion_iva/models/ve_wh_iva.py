@@ -430,6 +430,25 @@ class VeWhIva(models.Model):
              'en ir_model.py, ambos campos convivían con el mismo label).',
     )
     doc_afectado = fields.Char(string='Documento Afectado')
+    discrepancia_doc_afectado_no_encontrado = fields.Boolean(
+        string='Discrepancia: Doc. Afectado no encontrado', copy=False,
+        help='El `doc_afectado` de la NC/ND que originó este registro no '
+             'coincidió (ni normalizado, ver ve_conciliacion.py::_norm_ctrl/'
+             '_norm_factura) con ninguna factura de la compañía al momento '
+             'de confirmar la carga. Puede ser una factura de un período '
+             'aún no cargado, o un error del archivo -- no bloquea, queda '
+             'para revisión (PROPUESTA_NOTAS_CREDITO_DEBITO.md sección 3.7).')
+    discrepancia_doc_afectado_detalle = fields.Char(
+        string='Detalle discrepancia Doc. Afectado', copy=False)
+    discrepancia_retencion_confirmada = fields.Boolean(
+        string='Discrepancia: NC/ND sobre retención ya confirmada', copy=False,
+        help='La NC/ND que originó este registro afecta una factura cuya '
+             'retención ya estaba `confirmado`/`declarado` -- se generó un '
+             'movimiento nuevo en el período de la NC/ND en vez de tocar el '
+             'original (Caso B, ver PROPUESTA_NOTAS_CREDITO_DEBITO.md '
+             'sección 1 y 3.7), queda marcado para revisión, no bloquea.')
+    discrepancia_retencion_confirmada_detalle = fields.Char(
+        string='Detalle discrepancia retención confirmada', copy=False)
     zona = fields.Char(
         string='Zona/Planta',
         help='Copiado de la factura al crear la retención (ver account.move.zona) '

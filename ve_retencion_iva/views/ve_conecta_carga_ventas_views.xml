@@ -99,6 +99,7 @@
                 <field name="nro_control"/>
                 <field name="nro_documento"/>
                 <field name="tipo_transaccion" string="Tipo TR" optional="show"/>
+                <field name="doc_afectado" string="Doc. Afectado" optional="show"/>
                 <field name="fecha"/>
                 <field name="base_16" sum="Total" optional="hide"/>
                 <field name="base_8" sum="Total" optional="hide"/>
@@ -312,6 +313,7 @@
                             <field name="estado_pago" optional="show"/>
                             <field name="nro_comp_retencion" string="N° Comprobante" optional="show"/>
                             <field name="tipo_transaccion" string="Tipo TR" optional="hide"/>
+                            <field name="doc_afectado" string="Doc. Afectado" optional="hide"/>
                             <field name="zona" optional="show"/>
                             <field name="es_spe" string="SPE" optional="show"/>
                             <field name="validado_seniat" string="Validado SENIAT" optional="show"/>

@@ -106,6 +106,13 @@ class WizardLibroVentas(models.TransientModel):
                 nro_nd = move.name
                 nro_fact_afectada = debit_origin.name
 
+        # Tipo de documento SENIAT: 01 Factura, 02 Nota de Débito, 03 Nota de
+        # Crédito -- _TIPO_DOC.get(move.move_type) no distingue una ND, que
+        # sigue teniendo move_type=='out_invoice' (solo cambia debit_origin_id,
+        # ya calculado arriba en nro_nd). Bug real corregido 2026-09-03: antes
+        # exportaba '01' para toda ND, código '02' nunca salía de este reporte.
+        tipo_doc = '02' if nro_nd else _TIPO_DOC.get(move.move_type, '01')
+
         # Comprobante de retención vinculado
         wh = move.ve_wh_iva_ids[:1]
         nro_comp = ''
@@ -126,7 +133,7 @@ class WizardLibroVentas(models.TransientModel):
             'nro_control':       getattr(move, 'nro_control', '') or '',
             'nro_nd':            nro_nd,
             'nro_nc':            nro_nc,
-            'tipo_doc':          _TIPO_DOC.get(move.move_type, '01'),
+            'tipo_doc':          tipo_doc,
             'nro_fact_afectada': nro_fact_afectada,
             'total_iva':         sign * move.amount_total,
             'ventas_no_grav':    sign * base_exenta,

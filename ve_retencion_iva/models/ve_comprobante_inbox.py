@@ -73,8 +73,17 @@ class VeComprobanteInbox(models.Model):
         ('comprobante_pago', 'Comprobante de Pago'),
         ('factura',          'Factura'),
         ('nota_credito',     'Nota de Crédito'),
+        ('nota_debito',      'Nota de Débito'),
         ('otro',             'Otro'),
-    ], string='Tipo de Documento (OCR)', readonly=True)
+    ], string='Tipo de Documento (OCR)', readonly=True,
+        help='Agregado "Nota de Débito" 2026-09-03 -- antes no existía como '
+             'opción, una ND real llegada por este canal se clasificaba como '
+             '"Factura" u "Otro", sin distinguirse.')
+    ocr_doc_afectado = fields.Char(
+        'Documento Afectado (OCR)', readonly=True,
+        help='N° de Factura/Control que este comprobante afecta -- solo '
+             'aplica si tipo_documento es Nota de Crédito/Débito. '
+             'Agregado 2026-09-03.')
 
     ocr_nro_control     = fields.Char('N° Control (OCR)',     readonly=True)
     ocr_rif             = fields.Char('RIF Agente (OCR)',     readonly=True)
@@ -161,7 +170,9 @@ class VeComprobanteInbox(models.Model):
             'devuélvelos SIEMPRE como número decimal, ejemplo: 130000.00\n'
             '{\n'
             '  "tipo_documento": "uno de: retencion_iva | comprobante_pago | factura | '
-            'nota_credito | otro",\n'
+            'nota_credito | nota_debito | otro",\n'
+            '  "documento_afectado": "N° de Factura o Control que este documento afecta '
+            '-- solo si tipo_documento es nota_credito o nota_debito, null si no aplica",\n'
             '  "nro_comprobante": "número de 14 dígitos del comprobante o null",\n'
             '  "nro_control": "número de control formato 00-XXXXXXX o null",\n'
             '  "nro_factura": "número de factura o documento (solo dígitos) o null '
@@ -354,7 +365,11 @@ class VeComprobanteInbox(models.Model):
         tipo_doc = _f('tipo_documento') or 'otro'
         if tipo_doc not in dict(self._fields['tipo_documento'].selection):
             tipo_doc = 'otro'
-        self.write({'tipo_documento': tipo_doc})
+        doc_afectado = _f('documento_afectado')
+        self.write({
+            'tipo_documento': tipo_doc,
+            'ocr_doc_afectado': str(doc_afectado).strip()[:50] if doc_afectado else False,
+        })
 
         if tipo_doc != 'retencion_iva':
             log.append(

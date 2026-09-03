@@ -439,6 +439,12 @@
                             <field name="fuera_plazo"     readonly="1"/>
                             <field name="tipo_documento"  readonly="is_locked"/>
                             <field name="doc_afectado"    readonly="is_locked"/>
+                            <field name="discrepancia_doc_afectado_no_encontrado" readonly="1"/>
+                            <field name="discrepancia_doc_afectado_detalle" readonly="1"
+                                   invisible="not discrepancia_doc_afectado_no_encontrado"/>
+                            <field name="discrepancia_retencion_confirmada" readonly="1"/>
+                            <field name="discrepancia_retencion_confirmada_detalle" readonly="1"
+                                   invisible="not discrepancia_retencion_confirmada"/>
                             <field name="comprobante_recibido" readonly="1"/>
                             <field name="canal_recepcion" readonly="is_locked"/>
                             <field name="monto_recibido"  readonly="1"/>

@@ -60,6 +60,7 @@
                                placeholder="14 d&#xED;gitos"/>
                         <field name="ocr_fecha_doc"     string="Fecha Comprobante"/>
                         <field name="ocr_tipo_documento" string="Tipo de Transacci&#xF3;n"/>
+                        <field name="ocr_doc_afectado" string="Documento Afectado"/>
                     </group>
                     <group>
                         <!-- Campos de validaci&#xF3;n: deben coincidir con la retenci&#xF3;n -->

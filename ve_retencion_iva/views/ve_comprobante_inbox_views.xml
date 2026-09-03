@@ -87,6 +87,8 @@
                             <field name="tipo_documento"      readonly="1" widget="badge"
                                    decoration-success="tipo_documento == 'retencion_iva'"
                                    decoration-warning="tipo_documento not in ('retencion_iva', False)"/>
+                            <field name="ocr_doc_afectado"    readonly="1"
+                                   invisible="tipo_documento not in ('nota_credito', 'nota_debito')"/>
                             <field name="ocr_nro_control"     readonly="1"/>
                             <field name="ocr_rif"             readonly="1"/>
                             <field name="ocr_nombre_agente"   readonly="1"/>

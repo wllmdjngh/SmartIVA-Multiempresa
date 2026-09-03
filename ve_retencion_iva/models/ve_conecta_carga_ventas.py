@@ -218,6 +218,41 @@ def _normalizar_tipo_transaccion(val):
     return False
 
 
+def _buscar_factura_por_doc_afectado(env, company, doc_afectado):
+    """Busca la factura/NC ya posteada en `company` cuyo N° de Factura o N°
+    de Control coincide con `doc_afectado`, NORMALIZANDO ambos lados con el
+    mismo criterio que ya usa `ve_conciliacion.py::_norm_ctrl`/`_norm_factura`
+    (solo dígitos significativos, sin ceros a la izquierda) -- reusado tal
+    cual, no reinventado (ver PROPUESTA_NOTAS_CREDITO_DEBITO.md sección 3.7:
+    sin esto, un `doc_afectado` real fallaría el match por diferencias de
+    formato -- guiones, ceros de relleno, el ".0" de Excel -- igual que ya
+    le pasaba al matching SENIAT antes de 2026-08-11, medido esa vez en
+    1,7% -> 72% de aciertos). Devuelve un recordset vacío si no encuentra
+    nada -- no bloquea, es insumo para las discrepancias no bloqueantes de
+    3.7 y para el ajuste de retención de 3.8."""
+    Move = env['account.move']
+    if not doc_afectado:
+        return Move.browse()
+    Periodo = env['ve.conciliacion.periodo']
+    norm_ctrl = Periodo._norm_ctrl(doc_afectado)
+    norm_fact = Periodo._norm_factura(doc_afectado)
+    candidatos = Move.search([
+        ('company_id', '=', company.id),
+        ('move_type', 'in', ('out_invoice', 'out_refund')),
+        ('state', '=', 'posted'),
+    ])
+    if norm_ctrl != '0':
+        match = candidatos.filtered(
+            lambda m: m.nro_control and Periodo._norm_ctrl(m.nro_control) == norm_ctrl)
+        if match:
+            return match[:1]
+    if norm_fact != '0':
+        match = candidatos.filtered(lambda m: Periodo._norm_factura(m.name) == norm_fact)
+        if match:
+            return match[:1]
+    return Move.browse()
+
+
 # Mapeo de encabezados reconocidos — CONECTA-13: columnas del Libro de Ventas
 # que el motor necesita (ver REQUISITOS.md sección 11, Bloque 1). Extender
 # esta lista con los sinónimos que use cada cliente real, en vez de construir
@@ -322,6 +357,25 @@ _HEADER_MAP = {
     'tipo tr': 'tipo_transaccion', 'tipo trans': 'tipo_transaccion',
     'cod transaccion': 'tipo_transaccion', 'codigo transaccion': 'tipo_transaccion',
     'tipo doc seniat': 'tipo_transaccion', 'tipo documento seniat': 'tipo_transaccion',
+    # Documento Afectado (Art. 75/76 Reglamento LIVA) — obligatorio en toda
+    # fila de NC/ND, referencia la factura que esa NC/ND afecta. Agregado
+    # 2026-09-03, insumo para AJUSTE-FISCAL-01/02 (ver doc_afectado arriba).
+    # NO confundir con "Nota de Crédito"/"Nota de Débito" (más abajo) — esas
+    # columnas traen el N° PROPIO de la NC/ND, no el de la factura afectada
+    # (confirmado en dato real de Cementos, zona Cerro Azul: fila con
+    # "Numero de Factura" vacío, "Nota de Credito"="CA000022" (N° propio) y
+    # "Factura Afectada"="CA011392" (lo que afecta) — son 2 columnas
+    # distintas, no sinónimos entre sí).
+    'documento afectado': 'doc_afectado', 'doc afectado': 'doc_afectado',
+    'factura afectada': 'doc_afectado', 'n factura afectada': 'doc_afectado',
+    'nro factura afectada': 'doc_afectado', 'numero factura afectada': 'doc_afectado',
+    # N° propio de la NC/ND cuando el Libro lo trae en su propia columna
+    # (en vez de reusar "Numero de Factura") — mapea a nro_documento, el
+    # mismo campo que ya identifica cualquier fila (factura o NC/ND).
+    'nota de credito': 'nro_documento', 'n nota de credito': 'nro_documento',
+    'nro nota de credito': 'nro_documento', 'numero nota de credito': 'nro_documento',
+    'nota de debito': 'nro_documento', 'n nota de debito': 'nro_documento',
+    'nro nota de debito': 'nro_documento', 'numero nota de debito': 'nro_documento',
 }
 
 # Segunda pasada de reconocimiento por frase ancla — mismo criterio que
@@ -1216,6 +1270,56 @@ class VeConectaCargaVentas(models.Model):
                             })
                         else:
                             sin_retencion_lineas.append(linea)
+
+                        # Paso 4 (2026-09-03) — ajustar la retención de la
+                        # factura que esta NC revierte (el gap real, ver
+                        # PROPUESTA_NOTAS_CREDITO_DEBITO.md sección 1 y 3.8,
+                        # y el backfill ya aplicado en Vencement 2026-09-03
+                        # para el mismo síntoma).
+                        retencion_original = WhIva.search(
+                            [('invoice_id', '=', factura_registro.id)], limit=1)
+                        if retencion_original:
+                            periodo_declarado = bool(
+                                retencion_original.conciliacion_id
+                                and retencion_original.conciliacion_id.estado == 'declarado')
+                            if (retencion_original.state in ('esperado', 'vencido')
+                                    and not periodo_declarado):
+                                # Caso A: aún no practicada -- se puede anular
+                                # directo, mismo mecanismo ya usado y
+                                # verificado en el backfill de Vencement
+                                # (89 casos, 2026-09-03).
+                                retencion_original.write({
+                                    'motivo_anulacion': (
+                                        f'Anulado automáticamente -- la factura '
+                                        f'{factura_registro.name} fue revertida por '
+                                        f'la Nota de Crédito {nc.name} (fila {linea.fila}).'
+                                    ),
+                                })
+                                retencion_original.action_anular()
+                            elif retencion_original.state == 'confirmado' or periodo_declarado:
+                                # Caso B: ya practicada/declarada -- NO se
+                                # toca (confirmado con el contador: siempre
+                                # se genera un movimiento nuevo, nunca se
+                                # reversa lo ya practicado). Crear el
+                                # movimiento nuevo en negativo requiere
+                                # decisión de diseño contable aparte (ver
+                                # nota en el chat 2026-09-03: _validar_para_
+                                # confirmar exige monto>0 y _crear_asiento_
+                                # contable no invierte débito/crédito para
+                                # negativos) -- PENDIENTE, no implementado
+                                # todavía. Por ahora solo se marca la
+                                # discrepancia para revisión manual.
+                                retencion_original.write({
+                                    'discrepancia_retencion_confirmada': True,
+                                    'discrepancia_retencion_confirmada_detalle': (
+                                        f'Nota de Crédito {nc.name} (fila {linea.fila}) '
+                                        f'revierte esta factura, ya '
+                                        f'{retencion_original.state}/declarada -- '
+                                        f'el ajuste en el período de la NC todavía '
+                                        f'no se genera automáticamente (pendiente '
+                                        f'de diseño contable), requiere revisión '
+                                        f'y corrección manual.'),
+                                })
                     except Exception as exc:
                         errores.append(f'Fila {linea.fila} (Nota de Crédito): {exc}')
                         # Si el posteo falla (ej. choque de nombre con OTRA
@@ -1354,7 +1458,20 @@ class VeConectaCargaVentas(models.Model):
                 continue
 
             journal_linea = self._journal_zona(self.company_id, linea.zona, journal, crear=True)
-            inv = Move.create({
+            # Nota de Débito explícita (Paso 3, 2026-09-03): si el archivo
+            # trae Tipo de Transacción '02' y un Documento Afectado que sí
+            # matchea (normalizado) una factura existente, crearla con
+            # debit_origin_id apuntando a esa factura -- mismo tratamiento
+            # de retención que cualquier out_invoice nueva (el hook de
+            # account_move.py no distingue debit_origin_id, calcula igual),
+            # pero con trazabilidad real en vez de perderse como factura
+            # regular. Si no matchea, se deja como factura normal (no se
+            # inventa un vínculo) y queda para las discrepancias de Paso 5.
+            factura_nd_afectada = Move.browse()
+            if linea.tipo_transaccion == '02' and linea.doc_afectado:
+                factura_nd_afectada = _buscar_factura_por_doc_afectado(
+                    self.env, self.company_id, linea.doc_afectado)
+            vals_factura = {
                 # N° Factura del cliente se respeta tal cual — SmartIVA NO
                 # genera su propio número, la factura ya existe y ya tiene
                 # su numeración legal real (pedido explícito 2026-07-24).
@@ -1388,7 +1505,10 @@ class VeConectaCargaVentas(models.Model):
                 'nro_factura': linea.nro_documento or False,
                 'zona': linea.zona or False,
                 'invoice_line_ids': lineas_factura,
-            })
+            }
+            if factura_nd_afectada:
+                vals_factura['debit_origin_id'] = factura_nd_afectada.id
+            inv = Move.create(vals_factura)
             try:
                 with self.env.cr.savepoint():
                     inv.action_post()
@@ -1432,6 +1552,19 @@ class VeConectaCargaVentas(models.Model):
                     'monto_iva_archivo': linea.monto_iva,
                     'viene_de_libro_ventas': True,
                 })
+                # Discrepancia no bloqueante (Paso 5, sección 3.7): la fila
+                # traía Tipo de Transacción '02' (ND) y un Documento Afectado,
+                # pero no se encontró ninguna factura que matcheara -- no se
+                # inventa el vínculo, se deja como factura regular (ya
+                # ocurrió arriba) y se marca para revisión.
+                if linea.tipo_transaccion == '02' and linea.doc_afectado and not factura_nd_afectada:
+                    wh_creada.write({
+                        'discrepancia_doc_afectado_no_encontrado': True,
+                        'discrepancia_doc_afectado_detalle': (
+                            f'Nota de Débito (fila {linea.fila}) trae Documento '
+                            f'Afectado "{linea.doc_afectado}" -- no coincide con '
+                            f'ninguna factura de la compañía.'),
+                    })
             else:
                 sin_retencion_lineas.append(linea)
 
@@ -2353,6 +2486,16 @@ class VeConectaCargaVentasLinea(models.Model):
              'ahora — insumo para AJUSTE-FISCAL-01/02 (Nota de Crédito/'
              'Débito no ajustan la retención), todavía no conectado a esa '
              'lógica ni a la detección Registro+Anulación existente.')
+    doc_afectado = fields.Char(
+        string='Documento Afectado',
+        help='N° de Factura/Control de la factura que esta fila (NC/ND) '
+             'afecta, tal cual lo trae el archivo — columna "Documento '
+             'Afectado"/"Factura Afectada"/"Nota de Crédito" (Art. 75/76 '
+             'Reglamento LIVA). Agregado 2026-09-03, insumo para '
+             'AJUSTE-FISCAL-01/02 — se compara contra facturas existentes '
+             'normalizando con el mismo criterio de _norm_ctrl/_norm_factura '
+             'de ve_conciliacion.py (ver action_confirmar), nunca por texto '
+             'literal.')
 
     partner_id = fields.Many2one(
         'res.partner', string='Cliente (match)',
