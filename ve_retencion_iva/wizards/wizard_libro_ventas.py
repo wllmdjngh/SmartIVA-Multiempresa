@@ -150,7 +150,14 @@ class WizardLibroVentas(models.TransientModel):
             'iva_16':            sign * iva_16,
             'base_8':            sign * base_8,
             'iva_8':             sign * iva_8,
-            'monto_ret':         sign * monto_ret,
+            # No se multiplica por 'sign': monto_ret viene de wh.monto_retenido,
+            # que ya trae su signo real (negativo en el ajuste automático de
+            # una NC sobre retención ya confirmada, Caso B) -- aplicar 'sign'
+            # aquí lo volvía a invertir y una NC mostraba IVA Ret. positivo
+            # mientras IVA 16%/8% (sí derivados de las líneas del asiento,
+            # siempre positivas en Odoo) mostraba negativo. Bug real
+            # reportado por la usuaria 2026-09-04 viendo el PDF real.
+            'monto_ret':         monto_ret,
             'iva_percibido':     0.0,
             # Para acumulados en resumen
             'base_exp':          sign * base_exp,
