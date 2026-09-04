@@ -36,7 +36,8 @@
                        optional="show"/>
                 <field name="partner_id" string="Cliente / Agente de Retención"/>
                 <field name="zona" string="Zona/Planta" optional="show"/>
-                <field name="invoice_name" string="Factura"/>
+                <field name="tipo_documento" string="TipoTR" optional="show"/>
+                <field name="invoice_name" string="N&#xB0; Doc."/>
                 <field name="nro_control" string="N&#xB0; Control" optional="show"/>
                 <field name="nro_factura" string="N&#xB0; Factura (Carga)" optional="hide"/>
                 <field name="payment_state" string="Estado Pago" widget="badge" optional="show"
@@ -46,7 +47,7 @@
                        decoration-muted="payment_state == 'not_paid'"/>
                 <field name="periodo_retencion" string="Periodo Declaraci&#xf3;n"/>
                 <field name="fecha" string="Fecha Recibido"/>
-                <field name="fecha_vencimiento_entrega" string="Límite Entrega"
+                <field name="fecha_vencimiento_entrega" string="F. L&#xED;mite"
                        optional="show"/>
                 <field name="fuera_plazo" optional="show"/>
                 <field name="monto_base" string="Base 16%" optional="show"/>
@@ -562,6 +563,16 @@
                 <filter name="sin_nro_control"
                         string="Sin N&#xB0; Control"
                         domain="[('nro_control','=',False)]"/>
+                <separator/>
+                <filter name="tipo_tr_01"
+                        string="Factura (01)"
+                        domain="[('tipo_documento','=','01')]"/>
+                <filter name="tipo_tr_02"
+                        string="Nota de D&#xE9;bito (02)"
+                        domain="[('tipo_documento','=','02')]"/>
+                <filter name="tipo_tr_03"
+                        string="Nota de Cr&#xE9;dito (03)"
+                        domain="[('tipo_documento','=','03')]"/>
                 <group>
                     <filter name="gb_company"
                             string="Por Compa&#xF1;&#xED;a"
