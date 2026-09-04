@@ -282,8 +282,8 @@
 
                                 <div style="font-size:6.5pt; margin-top:6pt; color:#555;">
                                     Tipos: 01 = Factura regular &#160;&#183;&#160;
-                                    03 = Nota de Crédito &#160;&#183;&#160;
-                                    04 = Nota de Débito
+                                    02 = Nota de Débito &#160;&#183;&#160;
+                                    03 = Nota de Crédito
                                 </div>
 
                             </div>

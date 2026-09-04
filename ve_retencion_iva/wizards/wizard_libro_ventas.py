@@ -119,9 +119,18 @@ class WizardLibroVentas(models.TransientModel):
         monto_ret = 0.0
         estado_comp = ''
         if wh:
-            nro_comp = wh.name or ''
+            # El ajuste automático de una NC sobre una retención ya
+            # confirmada/declarada (Caso B, 2026-09-03) usa el nombre
+            # interno "AJUSTE-NC-<nombre de la NC>" -- no es un comprobante
+            # real que el cliente haya emitido, mostrarlo en el Libro de
+            # Ventas (documento que se declara al SENIAT) sería engañoso.
+            # Queda en blanco hasta que el comprobante real del cliente se
+            # concilie contra este mismo registro (ver diseño en
+            # PROPUESTA_NOTAS_CREDITO_DEBITO.md sección 3.2).
+            es_ajuste_interno = bool(wh.name) and wh.name.startswith('AJUSTE-NC-')
+            nro_comp = '' if es_ajuste_interno else (wh.name or '')
             monto_ret = wh.monto_retenido
-            estado_comp = dict(wh._fields['state'].selection).get(wh.state, '')
+            estado_comp = '' if es_ajuste_interno else dict(wh._fields['state'].selection).get(wh.state, '')
 
         return {
             'op_nro':            op_nro,
