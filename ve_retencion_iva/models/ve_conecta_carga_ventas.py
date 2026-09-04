@@ -301,6 +301,11 @@ def _crear_ajuste_nc_negativo(env, retencion_afectada, nc, factura_afectada,
     WhIva = env['ve.wh.iva']
     ajuste = WhIva.create({
         'name': f'AJUSTE-NC-{nc.name}',
+        # 'state' default es 'esperado' (ve_wh_iva.py:199) -- action_confirmar()
+        # exige 'borrador' ("Solo se puede confirmar un comprobante en estado
+        # Borrador"). Bug real encontrado probando en Multiempresa 2026-09-04:
+        # sin esto, el ajuste fallaba SIEMPRE con ese error.
+        'state': 'borrador',
         'invoice_id': nc.id,
         'partner_id': retencion_afectada.partner_id.id,
         'nro_control': nc.nro_control or False,
@@ -1521,17 +1526,35 @@ class VeConectaCargaVentas(models.Model):
                             base_total_previa = retencion_afectada.base_imponible_total or 0.0
                             factor = (max(0.0, 1 - (monto_nc / base_total_previa))
                                       if base_total_previa else 0.0)
-                            retencion_afectada.write({
-                                'monto_base': round((retencion_afectada.monto_base or 0) * factor, 2),
-                                'monto_iva': round((retencion_afectada.monto_iva or 0) * factor, 2),
-                                'monto_base_red': round((retencion_afectada.monto_base_red or 0) * factor, 2),
-                                'monto_iva_red': round((retencion_afectada.monto_iva_red or 0) * factor, 2),
-                            })
-                            retencion_afectada.message_post(
-                                body=(f'Monto reducido automáticamente -- Nota de '
-                                      f'Crédito parcial {nc.name} (fila {linea.fila}) '
-                                      f'revierte Bs. {monto_nc:,.2f} de esta factura.'),
-                                message_type='comment', subtype_xmlid='mail.mt_note')
+                            if factor <= 0.0:
+                                # La NC llegó por el camino "parcial" (Tipo
+                                # Transacción + Documento Afectado, no por
+                                # neteo exacto) pero en la práctica anula el
+                                # 100% -- usar el mismo action_anular() del
+                                # camino de neteo exacto, no dejarla en
+                                # 'esperado' con monto Bs.0 (bug real
+                                # encontrado probando en Multiempresa
+                                # 2026-09-04: quedaba huérfana en Esperado).
+                                retencion_afectada.write({
+                                    'motivo_anulacion': (
+                                        f'Anulado automáticamente -- la factura '
+                                        f'{factura_afectada.name} fue revertida por '
+                                        f'la Nota de Crédito {nc.name} (fila {linea.fila}).'
+                                    ),
+                                })
+                                retencion_afectada.action_anular()
+                            else:
+                                retencion_afectada.write({
+                                    'monto_base': round((retencion_afectada.monto_base or 0) * factor, 2),
+                                    'monto_iva': round((retencion_afectada.monto_iva or 0) * factor, 2),
+                                    'monto_base_red': round((retencion_afectada.monto_base_red or 0) * factor, 2),
+                                    'monto_iva_red': round((retencion_afectada.monto_iva_red or 0) * factor, 2),
+                                })
+                                retencion_afectada.message_post(
+                                    body=(f'Monto reducido automáticamente -- Nota de '
+                                          f'Crédito parcial {nc.name} (fila {linea.fila}) '
+                                          f'revierte Bs. {monto_nc:,.2f} de esta factura.'),
+                                    message_type='comment', subtype_xmlid='mail.mt_note')
                         elif ya_declarada:
                             # Reversión PARCIAL -- el ajuste solo espeja el
                             # monto que ESTA Nota de Crédito revierte
