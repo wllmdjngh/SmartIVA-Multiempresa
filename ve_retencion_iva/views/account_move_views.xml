@@ -18,10 +18,14 @@
                 xpath que matchee solo por @for cae en AMBOS y Odoo aplica la
                 inserción en los 2 lugares, duplicando todo lo de abajo para
                 Ventas (bug real encontrado 2026-09-04 por la usuaria, existía
-                desde antes de esta sesión). Se filtra también por @string
-                para anclar solo al de Ventas.
+                desde antes de esta sesión). NO se puede filtrar por @string
+                (Odoo lo bloquea explícitamente: "View inheritance may not
+                use attribute 'string' as a selector", rompió el registry
+                completo en el primer intento). Se usa el índice de
+                posición dentro de header_right_group en su lugar (el de
+                Ventas es siempre el primero en el arch base).
             -->
-            <xpath expr="//label[@for='invoice_date'][@string='Invoice Date']" position="before">
+            <xpath expr="//group[@id='header_right_group']/label[@for='invoice_date'][1]" position="before">
                 <field name="nro_control"
                        string="N&#xB0; Control"
                        placeholder="00-0000000"
