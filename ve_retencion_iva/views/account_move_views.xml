@@ -21,9 +21,22 @@
                        string="N&#xB0; Control"
                        placeholder="00-0000000"
                        invisible="move_type not in ('out_invoice','out_refund')"/>
+                <!--
+                    nro_factura es un campo genérico a propósito (mapea
+                    "Número de Factura" O "Nota de Crédito" O "Nota de
+                    Débito", la que traiga la fila del Libro de Ventas,
+                    ver _HEADER_MAP en ve_conecta_carga_ventas.py) para que
+                    la lógica de duplicados/matching tenga un solo campo
+                    que revisar sin importar el tipo de documento. Acá solo
+                    se cambia la ETIQUETA visible según move_type, mismo
+                    campo, mismo dato, sin tocar la carga.
+                -->
                 <field name="nro_factura"
                        string="N&#xB0; Factura"
-                       invisible="move_type not in ('out_invoice','out_refund')"/>
+                       invisible="move_type != 'out_invoice'"/>
+                <field name="nro_factura"
+                       string="N&#xB0; Nota de Cr&#xE9;dito"
+                       invisible="move_type != 'out_refund'"/>
             </xpath>
 
             <!--
