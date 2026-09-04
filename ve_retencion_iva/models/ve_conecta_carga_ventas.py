@@ -2622,6 +2622,25 @@ class VeConectaCargaVentas(models.Model):
         errores = []
         n_pagos = n_ret = n_fact = 0
 
+        # 0. Capturar ANTES de borrar nada: facturas PRE-EXISTENTES (de
+        #    OTRA carga) que una NC/ND de ESTA carga marcó como "afectada"
+        #    (Caso A -- ver action_confirmar) -- reversed_entry_id para NC,
+        #    debit_origin_id para ND. El Caso B (ajuste AJUSTE-NC-...) NO
+        #    necesita este tratamiento: vive en invoice_id=nc.id, así que
+        #    el paso 2 de abajo ya lo borra solo al borrar la retención de
+        #    la propia NC.
+        #
+        #    Bug real encontrado por la usuaria 2026-09-04 (Libro Demo
+        #    NC-ND): sin esto, Deshacer Carga borraba la NC/ND pero dejaba
+        #    la retención de la factura ORIGINAL tal cual el Caso A la
+        #    había dejado (Anulada, o con el monto reducido) -- reintentar
+        #    la carga se encontraba esa retención ya "usada", sin encajar
+        #    en Caso A ni Caso B (nunca vuelve a 'esperado' sola).
+        facturas_afectadas = (facturas.mapped('reversed_entry_id')
+                               | facturas.mapped('debit_origin_id'))
+        facturas_afectadas = facturas_afectadas.filtered(
+            lambda f: f.id not in facturas.ids)
+
         for inv in facturas:
             # 1. Pago(s) reconciliados con esta factura (EstadoPago=
             #    "Pagada") — hay que desligarlos/borrarlos ANTES de tocar
@@ -2668,6 +2687,32 @@ class VeConectaCargaVentas(models.Model):
                 n_fact += 1
             except Exception as exc:
                 errores.append(f'Factura {inv.name or inv.id} no eliminada: {exc}')
+
+        # 3.5. Restaurar la retención de las facturas afectadas (Caso A,
+        #     capturadas en el paso 0) -- se descarta la versión que dejó
+        #     el Caso A (Anulada, o con el monto reducido) y se recalcula
+        #     desde cero con el mismo método que la creó originalmente
+        #     (_ve_crear_retencion_esperada), que solo mira las líneas de
+        #     la factura tal cual está ahora -- no hace falta recordar
+        #     ningún monto/estado previo. NUNCA toca una retención
+        #     'confirmado' (Caso B) -- esa nunca cambió de estado, sigue
+        #     intacta por diseño, no hay nada que restaurar.
+        n_restauradas = 0
+        for fa in facturas_afectadas:
+            wh_vieja = WhIva.search([('invoice_id', '=', fa.id)], limit=1)
+            if wh_vieja and wh_vieja.state == 'confirmado':
+                continue
+            try:
+                with self.env.cr.savepoint():
+                    if wh_vieja:
+                        if wh_vieja.asiento_id and wh_vieja.asiento_id.state == 'posted':
+                            wh_vieja.asiento_id.button_cancel()
+                        wh_vieja.unlink()
+                    if fa.partner_id.es_agente_retencion:
+                        fa._ve_crear_retencion_esperada()
+                n_restauradas += 1
+            except Exception as exc:
+                errores.append(f'Retención de {fa.name or fa.id} no restaurada: {exc}')
 
         # 3b. Facturas HUÉRFANAS de esta carga — creadas por Move.create()
         #     pero que nunca llegaron a linea.invoice_id porque
@@ -2761,7 +2806,10 @@ class VeConectaCargaVentas(models.Model):
                if n_huerfanas else '') + '<br/>'
             f'<b>Pagos eliminados:</b> {n_pagos}<br/>'
             f'<b>Retenciones eliminadas:</b> {n_ret}<br/>'
-            f'<b>Períodos vacíos eliminados:</b> {n_periodos}<br/>'
+            + (f'<b>Retenciones de facturas afectadas (Caso A) restauradas a '
+               f'Esperado:</b> {n_restauradas} de {len(facturas_afectadas)}<br/>'
+               if facturas_afectadas else '')
+            + f'<b>Períodos vacíos eliminados:</b> {n_periodos}<br/>'
             f'<b>Clientes creados por esta carga:</b> se conservan (no tienen '
             f'dato erróneo propio) — revisar a mano si ya no hacen falta.<br/>'
         )
