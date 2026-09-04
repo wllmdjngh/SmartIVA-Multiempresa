@@ -55,6 +55,10 @@ class AccountMove(models.Model):
     rif = fields.Char(string='RIF', related='partner_id.vat')
     es_agente_retencion = fields.Boolean(
         string='Contribuyente Especial', related='partner_id.es_agente_retencion')
+    nota_credito_count = fields.Integer(
+        string='Notas de Crédito',
+        compute='_compute_nota_credito_count',
+    )
 
     @api.depends('ve_wh_iva_prov_ids')
     def _compute_ve_wh_iva_prov_count(self):
@@ -70,6 +74,27 @@ class AccountMove(models.Model):
             'view_mode': 'list,form',
             'domain': [('invoice_id', '=', self.id)],
             'context': {'default_invoice_id': self.id},
+        }
+
+    @api.depends('reversal_move_ids')
+    def _compute_nota_credito_count(self):
+        for rec in self:
+            rec.nota_credito_count = len(rec.reversal_move_ids)
+
+    def action_view_notas_credito(self):
+        """Smart button de la factura original -- Odoo core (reversed_entry_id/
+        reversal_move_ids) no expone este vínculo en ningún lado de la UI para
+        facturas/NC (solo lo muestra para move_type=='entry'), a diferencia de
+        Notas de Débito (account_debit_note SÍ trae su propio smart button +
+        campo). Agregado 2026-09-04 a pedido de la usuaria, mismo patrón que
+        action_view_debit_notes/debit_note_count del módulo nativo."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Notas de Crédito',
+            'res_model': 'account.move',
+            'view_mode': 'list,form',
+            'domain': [('reversed_entry_id', '=', self.id)],
         }
 
     @api.onchange('nro_control')
