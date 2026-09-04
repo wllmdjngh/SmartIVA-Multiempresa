@@ -97,6 +97,22 @@ class AccountMove(models.Model):
             'domain': [('reversed_entry_id', '=', self.id)],
         }
 
+    def action_view_factura_afectada(self):
+        """Smart button de la propia NC, apunta a reversed_entry_id (siempre
+        una sola factura -- Many2one, no Many2many). Agregado 2026-09-04:
+        el campo equivalente (visible junto a Origen, ver
+        account_move_views.xml) queda enterrado en la pestaña "Otra
+        Información" -- mismo lugar donde Odoo esconde debit_origin_id
+        para Notas de Débito -- así que se agrega también acá arriba para
+        que sea tan visible como el smart button del lado factura."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'account.move',
+            'view_mode': 'form',
+            'res_id': self.reversed_entry_id.id,
+        }
+
     @api.onchange('nro_control')
     def _onchange_nro_control(self):
         if self.nro_control and not _NRO_CONTROL_RE.match(self.nro_control):
