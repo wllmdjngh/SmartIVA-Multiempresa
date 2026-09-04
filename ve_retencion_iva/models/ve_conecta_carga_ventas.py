@@ -1340,6 +1340,25 @@ class VeConectaCargaVentas(models.Model):
                             [('invoice_id', '=', factura_registro.id)], limit=1)
                         if retencion_original:
                             ya_declarada = _retencion_ya_declarada(self.env, retencion_original)
+                            # Instrumentación 2026-09-04 -- bug real encontrado
+                            # por la usuaria (FA-000502, misma familia de
+                            # pruebas): una retención Caso A parcial se quedó
+                            # sin reducir, sin mensaje en su chatter y sin
+                            # error en la carga -- no se pudo determinar la
+                            # causa exacta solo leyendo el código/RPC. Este
+                            # log deja constancia de qué vio el código en el
+                            # momento exacto de decidir, para diagnosticar la
+                            # próxima vez que se reproduzca.
+                            _logger.info(
+                                've_retencion_iva CONECTA-14 NC total: fila=%s '
+                                'nc=%s factura_registro=%s retencion_original=%s '
+                                'state=%s ya_declarada=%s conciliacion_estado=%s',
+                                linea.fila, nc.name, factura_registro.name,
+                                retencion_original.id, retencion_original.state,
+                                ya_declarada,
+                                retencion_original.conciliacion_id.estado
+                                if retencion_original.conciliacion_id else None,
+                            )
                             if (retencion_original.state in ('esperado', 'vencido')
                                     and not ya_declarada):
                                 # Caso A: aún no practicada -- se puede anular
@@ -1397,6 +1416,23 @@ class VeConectaCargaVentas(models.Model):
                                         f'{detalle_ajuste}, sin modificar este '
                                         f'comprobante.'),
                                 })
+                            else:
+                                # Instrumentación 2026-09-04 -- no debería
+                                # llegar acá según la lógica esperada (todo
+                                # estado cae en Caso A o Caso B). Si aparece,
+                                # es la causa real del bug de FA-000502.
+                                errores.append(
+                                    f'Fila {linea.fila}: la retención de '
+                                    f'{factura_registro.name} (id {retencion_original.id}, '
+                                    f'estado={retencion_original.state}, '
+                                    f'ya_declarada={ya_declarada}) no calzó en Caso A ni '
+                                    f'Caso B -- no se ajustó, requiere revisión manual.')
+                        else:
+                            errores.append(
+                                f'Fila {linea.fila}: no se encontró ninguna retención '
+                                f'(ve.wh.iva) para la factura afectada '
+                                f'{factura_registro.name} (id {factura_registro.id}) -- '
+                                f'no se pudo ajustar.')
 
                         # Bug real encontrado 2026-08-20 (orden corregido
                         # 2026-09-04): esta rama nunca revisaba si el hook
@@ -1522,6 +1558,24 @@ class VeConectaCargaVentas(models.Model):
                         ya_declarada = _retencion_ya_declarada(self.env, retencion_afectada)
                         monto_nc = (abs(linea.base_16 or 0) + abs(linea.base_8 or 0)
                                     + abs(linea.base_exento or 0))
+                        # Instrumentación 2026-09-04 -- bug real encontrado por
+                        # la usuaria (FA-000502): esta retención se quedó sin
+                        # reducir, sin mensaje en su chatter y sin error en la
+                        # carga -- no se pudo determinar la causa exacta solo
+                        # leyendo el código/RPC. Este log deja constancia de
+                        # qué vio el código en el momento exacto de decidir.
+                        _logger.info(
+                            've_retencion_iva CONECTA-14 NC parcial: fila=%s '
+                            'nc=%s factura_afectada=%s retencion_afectada=%s '
+                            'state=%s ya_declarada=%s monto_nc=%s '
+                            'base_imponible_total=%s conciliacion_estado=%s',
+                            linea.fila, nc.name, factura_afectada.name,
+                            retencion_afectada.id, retencion_afectada.state,
+                            ya_declarada, monto_nc,
+                            retencion_afectada.base_imponible_total,
+                            retencion_afectada.conciliacion_id.estado
+                            if retencion_afectada.conciliacion_id else None,
+                        )
                         if (retencion_afectada.state in ('esperado', 'vencido')
                                 and not ya_declarada):
                             base_total_previa = retencion_afectada.base_imponible_total or 0.0
@@ -1593,6 +1647,23 @@ class VeConectaCargaVentas(models.Model):
                                     f'declarada -- {detalle_ajuste}, sin modificar '
                                     f'este comprobante.'),
                             })
+                        else:
+                            # Instrumentación 2026-09-04 -- no debería llegar
+                            # acá según la lógica esperada (todo estado cae en
+                            # Caso A o Caso B). Si aparece, es la causa real
+                            # del bug de FA-000502.
+                            errores.append(
+                                f'Fila {linea.fila}: la retención de '
+                                f'{factura_afectada.name} (id {retencion_afectada.id}, '
+                                f'estado={retencion_afectada.state}, '
+                                f'ya_declarada={ya_declarada}) no calzó en Caso A ni '
+                                f'Caso B -- no se ajustó, requiere revisión manual.')
+                    else:
+                        errores.append(
+                            f'Fila {linea.fila}: no se encontró ninguna retención '
+                            f'(ve.wh.iva) para la factura afectada '
+                            f'{factura_afectada.name} (id {factura_afectada.id}) -- '
+                            f'no se pudo ajustar.')
 
                     # Bug real (mismo patrón del camino "Registro+Anulación"
                     # arriba en este archivo, ver ese comentario para el
