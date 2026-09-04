@@ -823,6 +823,14 @@ class WizardSubirComprobante(models.TransientModel):
                 message_type='comment',
                 subtype_xmlid='mail.mt_note',
             )
+            # Mismo fix que ve_wh_iva.py::action_recibir: si "Conciliar
+            # SENIAT" ya había encontrado el match antes de que llegara el
+            # papel físico (quedó en 'conciliada_norec' -- "No Recibido
+            # SENIAT OK"), ese fork no se re-evalúa solo porque el estado
+            # cambió acá -- sin este ajuste la etiqueta se queda pisada e
+            # inconsistente. El monto no cambió, solo la recepción física.
+            if record.estado_conciliacion == 'conciliada_norec':
+                record.estado_conciliacion = 'listo_declarar'
 
         # Actualizar campos de identificación del comprobante
         # NOTA: ocr_fecha_doc es la fecha de EMISIÓN del comprobante (leída

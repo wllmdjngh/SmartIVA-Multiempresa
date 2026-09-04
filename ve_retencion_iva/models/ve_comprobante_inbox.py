@@ -778,6 +778,18 @@ class VeComprobanteInbox(models.Model):
             update['comp_monto_retenido'] = ocr_monto
         wh.write(update)
 
+        # Si "Conciliar SENIAT" ya había encontrado el match antes de que
+        # llegara el comprobante, `estado_conciliacion` había quedado en
+        # 'conciliada_norec' ("No Recibido SENIAT OK") -- ese fork solo se
+        # evalúa dentro de _do_conciliar y no se re-ejecuta solo porque el
+        # estado cambió acá, así que sin este ajuste la etiqueta se queda
+        # pisada e inconsistente (dice "No Recibido" con el comprobante ya
+        # recibido). El monto no cambió, solo la recepción física, así que
+        # el resultado es directo: pasa a 'listo_declarar' -- mismo fix que
+        # ve_wh_iva.py::action_recibir para la ruta manual.
+        if wh.estado_conciliacion == 'conciliada_norec':
+            wh.estado_conciliacion = 'listo_declarar'
+
         factura_ref = (
             Markup('<br/>Factura: <b>{}</b>').format(escape(wh.invoice_id.name))
             if wh.invoice_id else Markup('')

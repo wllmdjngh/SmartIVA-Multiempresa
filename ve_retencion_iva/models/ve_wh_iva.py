@@ -1109,6 +1109,25 @@ class VeWhIva(models.Model):
                 'state': 'borrador',
                 'fecha': fecha_recepcion,
             })
+            # Si "Conciliar SENIAT" ya había encontrado el match antes de
+            # que llegara el papel físico, había quedado en 'conciliada_norec'
+            # ("No Recibido SENIAT OK") -- ese fork solo se evalúa dentro de
+            # _do_conciliar y no se re-ejecuta solo porque el estado cambió,
+            # así que sin este ajuste la etiqueta se queda pisada e
+            # inconsistente (dice "No Recibido" con el comprobante ya
+            # recibido). El monto no cambió, solo la recepción física, así
+            # que el resultado es directo: pasa a 'listo_declarar' (mismo
+            # destino que _do_conciliar le habría dado si el comprobante ya
+            # hubiera estado recibido cuando corrió la conciliación).
+            if rec.estado_conciliacion == 'conciliada_norec':
+                rec.estado_conciliacion = 'listo_declarar'
+                rec.message_post(
+                    body='Estado Conciliación actualizado a "Listo para Declarar": '
+                         'el comprobante ya fue recibido y el monto seguía '
+                         'coincidiendo con el SENIAT.',
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
             # Comprobante recibido fuera de plazo → reasignar al período activo
             # actual DE LA MISMA COMPAÑÍA (MULTI-02)
             if rec.fuera_plazo:
