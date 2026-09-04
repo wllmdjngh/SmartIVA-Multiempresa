@@ -96,9 +96,9 @@
                 <field name="rif"/>
                 <field name="nombre_cliente"/>
                 <field name="zona" optional="show"/>
+                <field name="tipo_transaccion" string="TipoTR" optional="show"/>
                 <field name="nro_control"/>
                 <field name="nro_documento"/>
-                <field name="tipo_transaccion" string="Tipo TR" optional="show"/>
                 <field name="doc_afectado" string="Doc. Afectado" optional="show"/>
                 <field name="fecha"/>
                 <field name="base_16" sum="Total" optional="hide"/>
@@ -303,6 +303,7 @@
                             <field name="fila" readonly="1"/>
                             <field name="rif"/>
                             <field name="nombre_cliente"/>
+                            <field name="tipo_transaccion" string="TipoTR" optional="show"/>
                             <field name="nro_control"/>
                             <field name="nro_documento"/>
                             <field name="fecha"/>
@@ -312,7 +313,6 @@
                             <field name="monto_retenido" sum="Total" optional="show"/>
                             <field name="estado_pago" optional="show"/>
                             <field name="nro_comp_retencion" string="N° Comprobante" optional="show"/>
-                            <field name="tipo_transaccion" string="Tipo TR" optional="hide"/>
                             <field name="doc_afectado" string="Doc. Afectado" optional="hide"/>
                             <field name="zona" optional="show"/>
                             <field name="es_spe" string="SPE" optional="show"/>

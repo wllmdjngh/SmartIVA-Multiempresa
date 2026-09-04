@@ -840,7 +840,8 @@
                   decoration-info="estado_recepcion == 'esperado'">
                 <field name="partner_id" string="Cliente"/>
                 <field name="zona" string="Zona/Planta" optional="show"/>
-                <field name="invoice_name" string="Factura"/>
+                <field name="tipo_documento" string="TipoTR" optional="show"/>
+                <field name="invoice_name" string="N&#xB0; Doc."/>
                 <field name="nro_control" string="N&#xB0; Control" optional="hide"/>
                 <field name="payment_state" string="Estado Pago" widget="badge"
                        decoration-success="payment_state == 'paid'"
@@ -849,7 +850,7 @@
                        decoration-muted="payment_state == 'not_paid'"/>
                 <field name="monto_retenido" string="Monto" sum="Total"/>
                 <field name="periodo_retencion" string="Per&#xED;odo"/>
-                <field name="fecha_vencimiento_entrega" string="Fecha L&#xED;mite"/>
+                <field name="fecha_vencimiento_entrega" string="F. L&#xED;mite"/>
                 <field name="fecha_ultimo_recordatorio" string="&#xDA;ltimo Recordatorio"/>
                 <field name="fecha_ultima_llamada" string="&#xDA;ltima Llamada"/>
                 <field name="estado_recepcion" string="Recepci&#xf3;n" widget="badge"

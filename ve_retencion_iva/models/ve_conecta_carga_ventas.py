@@ -1330,24 +1330,6 @@ class VeConectaCargaVentas(models.Model):
                             nc.action_post()
                         linea.invoice_id = nc.id
                         creadas += 1
-                        # Bug real encontrado 2026-08-20: esta rama nunca
-                        # revisaba si el hook nativo generó (o no) una
-                        # ve.wh.iva para la Nota de Crédito -- sin esto, una
-                        # NC sin retención quedaba invisible tanto en
-                        # wh_tracking como en sin_retencion_lineas, y el
-                        # "TOTAL Sin Retención" del Resumen (creadas -
-                        # retenciones_creadas) terminaba más alto que la suma
-                        # real de las 2 filas del desglose por motivo.
-                        wh_creada_nc = WhIva.search([('invoice_id', '=', nc.id)], limit=1)
-                        if wh_creada_nc:
-                            wh_tracking.append((wh_creada_nc.id, linea.monto_retenido))
-                            wh_creada_nc.write({
-                                'monto_retenido_archivo': linea.monto_retenido,
-                                'monto_iva_archivo': linea.monto_iva,
-                                'viene_de_libro_ventas': True,
-                            })
-                        else:
-                            sin_retencion_lineas.append(linea)
 
                         # Paso 4 (2026-09-03) — ajustar la retención de la
                         # factura que esta NC revierte (el gap real, ver
@@ -1415,6 +1397,35 @@ class VeConectaCargaVentas(models.Model):
                                         f'{detalle_ajuste}, sin modificar este '
                                         f'comprobante.'),
                                 })
+
+                        # Bug real encontrado 2026-08-20 (orden corregido
+                        # 2026-09-04): esta rama nunca revisaba si el hook
+                        # nativo (o el Caso B de arriba) generó una ve.wh.iva
+                        # para la Nota de Crédito -- sin esto, una NC sin
+                        # retención quedaba invisible tanto en wh_tracking
+                        # como en sin_retencion_lineas. El chequeo vivía
+                        # ANTES del bloque Caso A/B: para una NC Caso B, el
+                        # ajuste (invoice_id=nc.id) recién se crea AHÍ ARRIBA
+                        # -- buscarlo antes de que existiera siempre daba
+                        # vacío, así que el Resumen contaba la fila como
+                        # "Sin Retención — revisar" aunque el ajuste se
+                        # hubiera creado bien (encontrado por la usuaria
+                        # 2026-09-04 auditando el Libro Demo NC-ND: Tabla 1
+                        # mostraba 4 "Sin Retención" cuando solo 2 eran
+                        # reales, las otras 2 sí tenían su AJUSTE-NC-... ya
+                        # confirmado). Movido a este punto, después del
+                        # bloque Caso A/B, para que si se creó un ajuste lo
+                        # encuentre.
+                        wh_creada_nc = WhIva.search([('invoice_id', '=', nc.id)], limit=1)
+                        if wh_creada_nc:
+                            wh_tracking.append((wh_creada_nc.id, linea.monto_retenido))
+                            wh_creada_nc.write({
+                                'monto_retenido_archivo': linea.monto_retenido,
+                                'monto_iva_archivo': linea.monto_iva,
+                                'viene_de_libro_ventas': True,
+                            })
+                        else:
+                            sin_retencion_lineas.append(linea)
                     except Exception as exc:
                         errores.append(f'Fila {linea.fila} (Nota de Crédito): {exc}')
                         # Si el posteo falla (ej. choque de nombre con OTRA
@@ -1495,16 +1506,6 @@ class VeConectaCargaVentas(models.Model):
                         nc.action_post()
                     linea.invoice_id = nc.id
                     creadas += 1
-                    wh_creada_nc = WhIva.search([('invoice_id', '=', nc.id)], limit=1)
-                    if wh_creada_nc:
-                        wh_tracking.append((wh_creada_nc.id, linea.monto_retenido))
-                        wh_creada_nc.write({
-                            'monto_retenido_archivo': linea.monto_retenido,
-                            'monto_iva_archivo': linea.monto_iva,
-                            'viene_de_libro_ventas': True,
-                        })
-                    else:
-                        sin_retencion_lineas.append(linea)
 
                     # Tratamiento de la retención de la factura afectada --
                     # PARCIAL: a diferencia del neteo exacto (que anula el
@@ -1592,6 +1593,23 @@ class VeConectaCargaVentas(models.Model):
                                     f'declarada -- {detalle_ajuste}, sin modificar '
                                     f'este comprobante.'),
                             })
+
+                    # Bug real (mismo patrón del camino "Registro+Anulación"
+                    # arriba en este archivo, ver ese comentario para el
+                    # detalle completo) -- movido a este punto 2026-09-04
+                    # para que, si el bloque de arriba creó un ajuste Caso B,
+                    # lo encuentre en vez de contar la fila como "Sin
+                    # Retención" siempre.
+                    wh_creada_nc = WhIva.search([('invoice_id', '=', nc.id)], limit=1)
+                    if wh_creada_nc:
+                        wh_tracking.append((wh_creada_nc.id, linea.monto_retenido))
+                        wh_creada_nc.write({
+                            'monto_retenido_archivo': linea.monto_retenido,
+                            'monto_iva_archivo': linea.monto_iva,
+                            'viene_de_libro_ventas': True,
+                        })
+                    else:
+                        sin_retencion_lineas.append(linea)
                 except Exception as exc:
                     errores.append(f'Fila {linea.fila} (Nota de Crédito parcial): {exc}')
                     nc.sudo().unlink()
@@ -2691,7 +2709,7 @@ class VeConectaCargaVentasLinea(models.Model):
     rif = fields.Char(string='RIF')
     nombre_cliente = fields.Char(string='Cliente')
     nro_control = fields.Char(string='N° Control')
-    nro_documento = fields.Char(string='N° Factura')
+    nro_documento = fields.Char(string='N° Documento')
     fecha = fields.Date(string='Fecha')
     base_16 = fields.Float(string='Base 16%', digits=(16, 2))
     base_8 = fields.Float(string='Base 8%', digits=(16, 2))
