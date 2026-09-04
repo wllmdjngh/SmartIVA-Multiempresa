@@ -2291,8 +2291,21 @@ class VeConectaCargaVentas(models.Model):
         # Orden fijo (no por cantidad) para que la tabla no "salte" de
         # posición entre cargas distintas -- más fácil de leer de un
         # vistazo cuando se repite la prueba varias veces.
+        #
+        # Bug real encontrado por la usuaria 2026-09-04 (Libro Demo NC-ND):
+        # esta lista es un whitelist fijo que nunca se actualizó cuando se
+        # agregaron las categorías de NC/ND (2026-09-03) -- una fila
+        # rechazada con categoria_discrepancia='doc_afectado_no_encontrado'
+        # (NC parcial sin match, ver Paso 2 del diseño) SÍ contaba en
+        # `rechazadas`/el TOTAL de abajo, pero el bucle de abajo la
+        # saltaba en silencio (`if cat not in rechazadas_por_categoria:
+        # continue` nunca matcheaba porque el bucle solo itera ESTA lista,
+        # no las categorías reales presentes) -- la fila "desaparecía" del
+        # desglose por motivo aunque sí estaba en el conteo, dando la
+        # sensación de que Tabla 1 "no cuadraba".
         ORDEN_CATEGORIAS = ['duplicada', 'dato_faltante', 'fecha_invalida',
-                            'registro_anulacion', 'documento_vacio', 'error_posteo', False]
+                            'registro_anulacion', 'documento_vacio', 'error_posteo',
+                            'nota_credito_parcial', 'doc_afectado_no_encontrado', False]
         for cat in ORDEN_CATEGORIAS:
             if cat not in rechazadas_por_categoria:
                 continue
@@ -2325,8 +2338,8 @@ class VeConectaCargaVentas(models.Model):
               f'<td {tdr}>{_m(base_no_generadas)}</td><td {tdr}>—</td><td {tdr}>—</td></tr>'
             + '</table>'
             + f'<p style="font-size:0.75rem; color:#666;">CHEQUEO: Retenciones Generadas '
-              f'(Tabla 2: {_n(retenciones_creadas)}) + Sin Retención + Rechazadas '
-              f'({_n(no_generadas)}) = '
+              f'(Tabla 2: {_n(retenciones_creadas)}) + Sin Retención '
+              f'({_n(sin_retencion)}) + Rechazadas ({_n(rechazadas)}) = '
               f'<span style="color:{"#198754" if suma_cuadra else "#dc3545"};">'
               f'{_n(retenciones_creadas + no_generadas)}</span> '
               f'— debe cuadrar con Filas Leídas ({_n(total_filas)})</p>'
