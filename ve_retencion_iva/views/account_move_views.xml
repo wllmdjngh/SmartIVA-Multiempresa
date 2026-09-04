@@ -11,12 +11,17 @@
 
             <!--
                 En Odoo 19, el form de facturas usa <label for="invoice_date">
-                separado del <field name="invoice_date">.
-                Insertar el campo ANTES del label asegura que nro_control
-                tenga su propio par label+value, y que invoice_date conserve
-                el suyo con la etiqueta "Fecha de factura".
+                separado del <field name="invoice_date">, y hay DOS labels
+                con ese "for" en el mismo header_right_group sin contenedor
+                propio: uno con string="Invoice Date" (out_invoice/out_refund)
+                y otro con string="Bill Date" (in_invoice/in_refund), un
+                xpath que matchee solo por @for cae en AMBOS y Odoo aplica la
+                inserción en los 2 lugares, duplicando todo lo de abajo para
+                Ventas (bug real encontrado 2026-09-04 por la usuaria, existía
+                desde antes de esta sesión). Se filtra también por @string
+                para anclar solo al de Ventas.
             -->
-            <xpath expr="//label[@for='invoice_date']" position="before">
+            <xpath expr="//label[@for='invoice_date'][@string='Invoice Date']" position="before">
                 <field name="nro_control"
                        string="N&#xB0; Control"
                        placeholder="00-0000000"
