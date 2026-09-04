@@ -21,7 +21,7 @@
                             No configura: idioma, moneda, datos fiscales de la compañía (RIF,
                             domicilio, condición de contribuyente) ni las cuentas/diarios reales
                             del cliente si difieren de estos códigos genéricos — eso se hace
-                            aparte, ver <code>GUIA_INSTALACION_PILOTO_DESPACHO.md</code>.
+                            aparte, ver <code>GUIA_INSTALACION_PILOTO.md</code>.
                         </p>
                         <group>
                             <field name="company_id"/>
