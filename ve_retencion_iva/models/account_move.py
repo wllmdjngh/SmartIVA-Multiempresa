@@ -59,23 +59,9 @@ class AccountMove(models.Model):
         string='Notas de Crédito',
         compute='_compute_nota_credito_count',
     )
-    factura_afectada_nro_control = fields.Char(
-        string='N° Control Fact. Afectada',
-        related='reversed_entry_id.nro_control',
-        readonly=True,
-        help='N° Control de la FACTURA que esta Nota de Crédito afecta -- '
-             'no confundir con "N° Control" arriba, que es el propio de '
-             'esta NC (necesario para detectar duplicados/matching, no se '
-             'toca).',
-    )
     factura_afectada_nro_factura = fields.Char(
         string='N° Factura Afectada',
         related='reversed_entry_id.nro_factura',
-        readonly=True,
-    )
-    factura_afectada_fecha = fields.Date(
-        string='Fecha Fact. Afectada',
-        related='reversed_entry_id.invoice_date',
         readonly=True,
     )
 

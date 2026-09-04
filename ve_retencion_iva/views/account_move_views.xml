@@ -45,17 +45,16 @@
                        string="N&#xB0; Factura"
                        invisible="move_type != 'out_invoice'"/>
                 <!--
-                    Datos de la FACTURA AFECTADA (no los propios de la NC),
-                    pedido explícito de la usuaria 2026-09-04, related
-                    read-only sobre reversed_entry_id, sin tocar nro_control/
-                    nro_factura propios (esos siguen siendo el N&#xB0; real de
-                    la NC, necesarios para duplicados/matching).
+                    N&#xB0; Factura de la FACTURA AFECTADA (no el propio de la
+                    NC), pedido explícito de la usuaria 2026-09-04, related
+                    read-only sobre reversed_entry_id. N&#xB0; Control y Fecha
+                    de la afectada se agregaron y se quitaron el mismo día
+                    (pedido explícito), en este caso de demo coincidían con
+                    los propios de la NC y daban sensación de duplicado; el
+                    smart button "Factura Afectada" ya cubre navegar al
+                    resto de sus datos.
                 -->
-                <field name="factura_afectada_nro_control"
-                       invisible="move_type != 'out_refund' or not reversed_entry_id"/>
                 <field name="factura_afectada_nro_factura"
-                       invisible="move_type != 'out_refund' or not reversed_entry_id"/>
-                <field name="factura_afectada_fecha"
                        invisible="move_type != 'out_refund' or not reversed_entry_id"/>
             </xpath>
 
