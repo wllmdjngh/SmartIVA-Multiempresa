@@ -168,29 +168,53 @@ class VeComprobanteInbox(models.Model):
             'crédito). Responde SOLO con un objeto JSON válido sin texto adicional ni ```.\n'
             'Los montos pueden aparecer en formato venezolano (130.000,00 = 130000.00); '
             'devuélvelos SIEMPRE como número decimal, ejemplo: 130000.00\n'
+            '\n'
+            'IMPORTANTE: un comprobante de retención IVA venezolano puede cubrir UN SOLO '
+            'documento (el caso más común) O ser un comprobante CONSOLIDADO que relaciona '
+            'VARIOS documentos del mismo proveedor retenidos en la misma quincena -- esto '
+            'es legal (el agente puede optar por un único comprobante cuando hace varias '
+            'operaciones con el mismo proveedor en el período) y se ve como una TABLA con '
+            'una fila por documento. Puede mezclar facturas y Notas de Crédito/Débito del '
+            'mismo proveedor. Devuelve SIEMPRE un array "lineas": un elemento por cada '
+            'documento/fila de la tabla (un solo elemento si el comprobante es de un único '
+            'documento). Los datos que son del comprobante en general (agente, sujeto '
+            'retenido, N° de comprobante, período) se repiten IGUALES en cada elemento; '
+            'los datos que son propios de cada documento (N° Control, N° Factura, tipo, '
+            'documento afectado, montos, fecha) van por elemento, uno por fila.\n'
             '{\n'
-            '  "tipo_documento": "uno de: retencion_iva | comprobante_pago | factura | '
+            '  "lineas": [\n'
+            '    {\n'
+            '      "tipo_documento": "uno de: retencion_iva | comprobante_pago | factura | '
             'nota_credito | nota_debito | otro",\n'
-            '  "documento_afectado": "N° de Factura o Control que este documento afecta '
-            '-- solo si tipo_documento es nota_credito o nota_debito, null si no aplica",\n'
-            '  "nro_comprobante": "número de 14 dígitos del comprobante o null",\n'
-            '  "nro_control": "número de control formato 00-XXXXXXX o null",\n'
-            '  "nro_factura": "número de factura o documento (solo dígitos) o null '
-            '— úsalo cuando el documento no traiga N° de Control",\n'
-            '  "rif_agente": "RIF del agente de retención (quien retiene, el cliente '
+            '      "documento_afectado": "N° de Factura o Control que ESTE documento '
+            'afecta -- solo si tipo_documento es nota_credito o nota_debito, null si no '
+            'aplica",\n'
+            '      "nro_comprobante": "número de 14 dígitos del comprobante o null",\n'
+            '      "nro_control": "número de control de ESTE documento, formato '
+            '00-XXXXXXX, o null",\n'
+            '      "nro_factura": "número de factura o documento de ESTE documento (solo '
+            'dígitos) o null — úsalo cuando el documento no traiga N° de Control",\n'
+            '      "rif_agente": "RIF del agente de retención (quien retiene, el cliente '
             'que emite el comprobante) formato J-XXXXXXXX-X o null",\n'
-            '  "nombre_agente": "razón social del agente de retención o null",\n'
-            '  "sujeto_retenido_rif": "RIF del sujeto retenido (a quien le retienen el '
+            '      "nombre_agente": "razón social del agente de retención o null",\n'
+            '      "sujeto_retenido_rif": "RIF del sujeto retenido (a quien le retienen el '
             'IVA — la empresa vendedora/proveedora, NO el agente) formato '
             'J-XXXXXXXX-X o null",\n'
-            '  "sujeto_retenido_nombre": "razón social del sujeto retenido o null",\n'
-            '  "periodo_fiscal": "período yyyy-mm (ej: 2026-05) o null",\n'
-            '  "fecha_emision": "fecha DD/MM/YYYY o null",\n'
-            '  "base_imponible_16": base imponible alícuota 16% como número ej 130000.00 o null,\n'
-            '  "iva_causado_16": IVA causado al 16% como número ej 20800.00 o null,\n'
-            '  "base_imponible_8": base imponible alícuota 8% como número o null,\n'
-            '  "iva_causado_8": IVA causado al 8% como número o null,\n'
-            '  "monto_retenido": monto total retenido como número ej 15600.00 o null\n'
+            '      "sujeto_retenido_nombre": "razón social del sujeto retenido o null",\n'
+            '      "periodo_fiscal": "período yyyy-mm (ej: 2026-05) o null",\n'
+            '      "fecha_emision": "fecha DD/MM/YYYY de ESTE documento o null",\n'
+            '      "base_imponible_16": base imponible alícuota 16% de ESTE documento '
+            'como número ej 130000.00 o null,\n'
+            '      "iva_causado_16": IVA causado al 16% de ESTE documento como número ej '
+            '20800.00 o null,\n'
+            '      "base_imponible_8": base imponible alícuota 8% de ESTE documento como '
+            'número o null,\n'
+            '      "iva_causado_8": IVA causado al 8% de ESTE documento como número o '
+            'null,\n'
+            '      "monto_retenido": monto retenido de ESTE documento como número ej '
+            '15600.00 o null\n'
+            '    }\n'
+            '  ]\n'
             '}\n'
             'Si hay una sola alícuota (p.ej. 16%), completa base_imponible_16 e iva_causado_16 '
             'y deja base_imponible_8 e iva_causado_8 en null. '
@@ -198,7 +222,7 @@ class VeComprobanteInbox(models.Model):
         )
         payload = json.dumps({
             'model': 'claude-sonnet-4-6',
-            'max_tokens': 512,
+            'max_tokens': 2048,
             'messages': [{'role': 'user', 'content': [
                 cb, {'type': 'text', 'text': prompt},
             ]}],
@@ -341,6 +365,66 @@ class VeComprobanteInbox(models.Model):
                 'error',
             )
             return
+
+        # MEJORA-COMPROBANTE-MULTILINEA (2026-09-07, ver
+        # [[project_pendientes_codigo_pre_piloto_vencement]] ítem 1): un
+        # comprobante de retención puede legalmente cubrir varias
+        # operaciones del mismo proveedor en la misma quincena en un solo
+        # documento (comprobante consolidado -- confirmado por normativa:
+        # "cuando el agente de retención realice más de una operación
+        # quincenal con el mismo proveedor, podrá optar por emitir un único
+        # comprobante que relacione todas las retenciones efectuadas en
+        # dicho período"), mezclando facturas y/o Notas de Crédito/Débito.
+        # El prompt de `_ocr_claude` ahora devuelve `lineas`: una por cada
+        # documento detectado (una sola si el comprobante es de un único
+        # documento, el caso de siempre). Cada línea se procesa de forma
+        # INDEPENDIENTE -- la primera contra este mismo registro, las
+        # demás contra registros hermanos nuevos (mismo patrón que
+        # `_separar_adjuntos_extra` ya usa para varios adjuntos en un
+        # email, MEJORA-CANAL-04), reusando sin cambios toda la lógica de
+        # matching/duplicado/sin_match de `_procesar_linea` de abajo.
+        lineas = ocr_data.get('lineas')
+        if not isinstance(lineas, list) or not lineas:
+            lineas = [ocr_data]
+
+        if len(lineas) > 1:
+            log.append(
+                f'{len(lineas)} documentos detectados en el mismo comprobante '
+                '— comprobante consolidado (varias facturas y/o Notas de '
+                'Crédito/Débito del mismo proveedor en la misma quincena, '
+                'permitido por la normativa) — cada documento se procesa y '
+                'vincula por separado.'
+            )
+
+        self._procesar_linea(lineas[0], atts, list(log))
+
+        for extra in lineas[1:]:
+            sibling = self.copy({
+                'estado':         'pendiente',
+                'wh_iva_id':      False,
+                'wh_iva_link_id': False,
+            })
+            sibling.message_post(
+                body=Markup(
+                    'Documento adicional del mismo comprobante consolidado '
+                    '{origen} — mismo archivo, otra l&#237;nea de la tabla.'
+                ).format(origen=self._get_html_link()),
+                message_type='comment', subtype_xmlid='mail.mt_note',
+            )
+            sibling._procesar_linea(extra, atts, [
+                f'Email: {self.email_from}', f'Asunto: {self.email_asunto}',
+                f'Documento adicional del comprobante consolidado '
+                f'(registro original id={self.id}).', '',
+            ])
+
+    def _procesar_linea(self, ocr_data, atts, log):
+        """Procesa UN documento (línea) del resultado OCR contra `self`.
+        Extraído de `_do_procesar` (2026-09-07) para soportar comprobantes
+        consolidados -- ver el comentario en `_do_procesar` que llama a este
+        método. `self` puede ser el registro original (primera línea) o un
+        registro hermano recién creado (líneas adicionales); toda la lógica
+        de acá abajo es idéntica a la de siempre, un documento a la vez."""
+        self.ensure_one()
 
         def _f(key):
             return str(ocr_data.get(key) or '').strip()

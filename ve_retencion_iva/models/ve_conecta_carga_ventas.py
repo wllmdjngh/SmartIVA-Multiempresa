@@ -218,7 +218,7 @@ def _normalizar_tipo_transaccion(val):
     return False
 
 
-def _buscar_factura_por_doc_afectado(env, company, doc_afectado):
+def _buscar_factura_por_doc_afectado(env, company, doc_afectado, zona=None):
     """Busca la factura/NC ya posteada en `company` cuyo N° de Factura o N°
     de Control coincide con `doc_afectado`, NORMALIZANDO ambos lados con el
     mismo criterio que ya usa `ve_conciliacion.py::_norm_ctrl`/`_norm_factura`
@@ -229,18 +229,25 @@ def _buscar_factura_por_doc_afectado(env, company, doc_afectado):
     le pasaba al matching SENIAT antes de 2026-08-11, medido esa vez en
     1,7% -> 72% de aciertos). Devuelve un recordset vacío si no encuentra
     nada -- no bloquea, es insumo para las discrepancias no bloqueantes de
-    3.7 y para el ajuste de retención de 3.8."""
+    3.7 y para el ajuste de retención de 3.8.
+
+    `zona` acota el match a la misma zona (mismo criterio zona_domain que
+    ya usa la detección de duplicados más abajo) -- el mismo N° de Control
+    puede repetirse legítimamente entre zonas distintas (ver pendiente
+    2026-09-07 [[project_pendientes_codigo_pre_piloto_vencement]]), sin
+    esto una NC/ND podía vincularse a la factura de la zona equivocada."""
     Move = env['account.move']
     if not doc_afectado:
         return Move.browse()
     Periodo = env['ve.conciliacion.periodo']
     norm_ctrl = Periodo._norm_ctrl(doc_afectado)
     norm_fact = Periodo._norm_factura(doc_afectado)
+    zona_domain = (['|', ('zona', '=', False), ('zona', '=', zona)] if zona else [])
     candidatos = Move.search([
         ('company_id', '=', company.id),
         ('move_type', 'in', ('out_invoice', 'out_refund')),
         ('state', '=', 'posted'),
-    ])
+    ] + zona_domain)
     if norm_ctrl != '0':
         match = candidatos.filtered(
             lambda m: m.nro_control and Periodo._norm_ctrl(m.nro_control) == norm_ctrl)
@@ -1491,7 +1498,7 @@ class VeConectaCargaVentas(models.Model):
                 # afectada viene de doc_afectado, no de un par en el
                 # mismo archivo.
                 factura_afectada = _buscar_factura_por_doc_afectado(
-                    self.env, self.company_id, linea.doc_afectado)
+                    self.env, self.company_id, linea.doc_afectado, zona=linea.zona)
                 if not factura_afectada:
                     # Se re-evaluó al confirmar y ya no matchea (dato
                     # cambió entre previsualizar y confirmar) -- no se
@@ -1827,7 +1834,7 @@ class VeConectaCargaVentas(models.Model):
             factura_nd_afectada = Move.browse()
             if linea.tipo_transaccion == '02' and linea.doc_afectado:
                 factura_nd_afectada = _buscar_factura_por_doc_afectado(
-                    self.env, self.company_id, linea.doc_afectado)
+                    self.env, self.company_id, linea.doc_afectado, zona=linea.zona)
             vals_factura = {
                 # N° Factura del cliente se respeta tal cual — SmartIVA NO
                 # genera su propio número, la factura ya existe y ya tiene
@@ -3357,7 +3364,7 @@ class VeConectaCargaVentasLinea(models.Model):
                 # -- se procesa al confirmar (ver action_confirmar), con la
                 # misma normalización que ya exige la sección 3.7.
                 factura_nc_parcial = _buscar_factura_por_doc_afectado(
-                    self.env, company, linea.doc_afectado)
+                    self.env, company, linea.doc_afectado, zona=linea.zona)
                 linea.bloqueante = False
                 if factura_nc_parcial:
                     linea.categoria_discrepancia = 'nota_credito_parcial'
@@ -3368,7 +3375,8 @@ class VeConectaCargaVentasLinea(models.Model):
                     linea.brecha = (f'Nota de Crédito — Documento Afectado '
                                      f'"{linea.doc_afectado}" no encontrado en la compañía')
             elif (linea.tipo_transaccion == '02' and linea.doc_afectado
-                  and not _buscar_factura_por_doc_afectado(self.env, company, linea.doc_afectado)):
+                  and not _buscar_factura_por_doc_afectado(
+                      self.env, company, linea.doc_afectado, zona=linea.zona)):
                 # Nota de Débito con Documento Afectado que no matchea --
                 # movido a la vista previa (Plan A, 2026-09-03; antes solo
                 # se veía como discrepancia después de confirmar). No

@@ -12,6 +12,25 @@ _API_KEY_PARAM = 've_retencion_iva.rpa_api_key'
 _REQUIRED_RET_FIELDS = {'nro_control', 'rif_agente', 'monto_retenido'}
 
 
+def _formatear_rif(rif):
+    """Mismo criterio que ve_conecta_carga_ventas.py::_formatear_rif /
+    wizard_carga_seniat.py::_formatear_rif -- RIF sin guión (letra + 9
+    dígitos) se formatea a LETRA-12345678-9. El RPA mandaba `rif_agente`
+    crudo (sin pasar por este formateo, a diferencia de la carga manual
+    del XLSX) -- no afectaba el cruce con SENIAT porque _do_conciliar
+    normaliza aparte, pero sí dejaba el dato guardado inconsistente entre
+    los dos canales de carga (pendiente 2026-09-07,
+    [[project_pendientes_codigo_pre_piloto_vencement]] ítem 4)."""
+    limpio = (rif or '').upper().strip()
+    if not limpio or '-' in limpio:
+        return limpio
+    m = re.match(r'^([VEJPG])(\d{9})$', limpio)
+    if not m:
+        return limpio
+    letra, digitos = m.groups()
+    return f'{letra}-{digitos[:8]}-{digitos[8]}'
+
+
 def _calc_periodo_retencion(periodo, fecha_str, provided=''):
     """Calcula el período de retención quincenal a partir de la FECHA REAL
     de la retención — no del `periodo` que se pidió en la llamada.
@@ -169,6 +188,10 @@ class RpaController(http.Controller):
 
         periodo = payload.get('periodo')
         retenciones_data = payload.get('retenciones', [])
+        if isinstance(retenciones_data, list):
+            for item in retenciones_data:
+                if isinstance(item, dict) and item.get('rif_agente'):
+                    item['rif_agente'] = _formatear_rif(str(item['rif_agente']).strip())
 
         _logger.info(
             've_retencion_iva cargar_retenciones: periodo=%r  conciliacion_id=%r  '

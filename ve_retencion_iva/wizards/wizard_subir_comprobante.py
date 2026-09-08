@@ -447,35 +447,51 @@ class WizardSubirComprobante(models.TransientModel):
 
         prompt = (
             'Analiza este comprobante de retención IVA venezolano y extrae los datos. '
-            'Responde ÚNICAMENTE con un objeto JSON con estos campos '
-            '(usa null si el campo no aparece en el documento):\n'
+            'Responde ÚNICAMENTE con un objeto JSON (usa null si un campo no aparece).\n'
+            '\n'
+            'IMPORTANTE: un comprobante puede cubrir UN SOLO documento (el caso más '
+            'común) O ser un comprobante CONSOLIDADO que relaciona VARIOS documentos '
+            'del mismo proveedor retenidos en la misma quincena -- esto es legal (el '
+            'agente puede optar por un único comprobante cuando hace varias '
+            'operaciones con el mismo proveedor en el período) y se ve como una TABLA '
+            'con una fila por documento, pudiendo mezclar facturas y Notas de '
+            'Crédito/Débito. Devuelve SIEMPRE un array "lineas": un elemento por cada '
+            'documento/fila (un solo elemento si el comprobante es de un único '
+            'documento). Los datos generales del comprobante (agente, sujeto, N° de '
+            'comprobante, período) se repiten iguales en cada elemento; los propios de '
+            'cada documento (N° Control, N° Factura, tipo, documento afectado, montos, '
+            'fecha) van por elemento.\n'
             '{\n'
-            '  "nro_comprobante": "número del comprobante de retención (14 dígitos, formato aaaaMM + 8 consecutivo)",\n'
-            '  "fecha_emision": "DD/MM/YYYY",\n'
-            '  "tipo_transaccion": "tipo de documento o transacción (ej: Factura, Nota de Crédito)",\n'
-            '  "documento_afectado": "N° de Factura o Control que este documento afecta -- '
+            '  "lineas": [\n'
+            '    {\n'
+            '      "nro_comprobante": "número del comprobante de retención (14 dígitos, formato aaaaMM + 8 consecutivo)",\n'
+            '      "fecha_emision": "DD/MM/YYYY de ESTE documento",\n'
+            '      "tipo_transaccion": "tipo de ESTE documento o transacción (ej: Factura, Nota de Crédito)",\n'
+            '      "documento_afectado": "N° de Factura o Control que ESTE documento afecta -- '
             'solo si es Nota de Crédito/Débito, null si es Factura regular",\n'
-            '  "periodo_fiscal": "período fiscal en formato yyyy-mm (ej: 2026-05). '
+            '      "periodo_fiscal": "período fiscal en formato yyyy-mm (ej: 2026-05). '
             'El agente puede escribirlo como 05/2026, Mayo 2026, 2026-05, etc.",\n'
-            '  "agente_nombre": "nombre o razón social del agente de retención",\n'
-            '  "agente_rif": "RIF del agente",\n'
-            '  "sujeto_nombre": "nombre del sujeto retenido",\n'
-            '  "nro_factura": "número de factura (solo dígitos)",\n'
-            '  "nro_control": "número de control formato 00-XXXXXXX",\n'
-            '  "total_con_iva": número,\n'
-            '  "compras_exentas": número,\n'
-            '  "base_imponible": número,\n'
-            '  "alicuota": número,\n'
-            '  "impuesto_causado": número,\n'
-            '  "iva_retenido": número,\n'
-            '  "total_a_pagar": número\n'
+            '      "agente_nombre": "nombre o razón social del agente de retención",\n'
+            '      "agente_rif": "RIF del agente",\n'
+            '      "sujeto_nombre": "nombre del sujeto retenido",\n'
+            '      "nro_factura": "número de factura de ESTE documento (solo dígitos)",\n'
+            '      "nro_control": "número de control de ESTE documento, formato 00-XXXXXXX",\n'
+            '      "total_con_iva": número,\n'
+            '      "compras_exentas": número,\n'
+            '      "base_imponible": número,\n'
+            '      "alicuota": número,\n'
+            '      "impuesto_causado": número,\n'
+            '      "iva_retenido": número,\n'
+            '      "total_a_pagar": número\n'
+            '    }\n'
+            '  ]\n'
             '}\n'
             'Los montos son decimales. Formato venezolano: 8.976,58 = 8976.58'
         )
 
         payload = json.dumps({
             'model': 'claude-sonnet-4-6',
-            'max_tokens': 1024,
+            'max_tokens': 2048,
             'messages': [{'role': 'user', 'content': [
                 content_block, {'type': 'text', 'text': prompt},
             ]}],
@@ -516,6 +532,39 @@ class WizardSubirComprobante(models.TransientModel):
             raise Exception(f'respuesta inesperada: {str(result)[:200]}')
         except json.JSONDecodeError as e:
             raise Exception(f'JSON inválido en respuesta: {e}')
+
+        # MEJORA-COMPROBANTE-MULTILINEA (2026-09-07, ver
+        # [[project_pendientes_codigo_pre_piloto_vencement]] ítem 1): un
+        # comprobante puede venir consolidado (varios documentos del mismo
+        # proveedor en la misma quincena). Este wizard sube el comprobante
+        # para UNA retención puntual (self.wh_iva_id) -- se usa la línea que
+        # coincide con ella (por N° Control o N° Factura, mismo criterio de
+        # ve_conciliacion.py::_norm_ctrl/_norm_factura); si ninguna coincide
+        # (o solo hay una línea) se usa la primera, comportamiento de
+        # siempre. Las demás líneas detectadas NO se auto-crean ni
+        # auto-vinculan (decisión explícita de la usuaria) -- solo se avisan
+        # en el resumen para que las suba a mano en sus propias retenciones.
+        lineas = data.get('lineas')
+        if not isinstance(lineas, list) or not lineas:
+            lineas = [data]
+        data = lineas[0]
+        otras = []
+        if len(lineas) > 1:
+            Periodo = self.env['ve.conciliacion.periodo']
+            wh = self.wh_iva_id
+            objetivo_ctrl = Periodo._norm_ctrl(wh.nro_control) if wh.nro_control else '0'
+            factura_wh = wh.nro_documento or (wh.invoice_id.name if wh.invoice_id else '')
+            objetivo_fact = Periodo._norm_factura(factura_wh) if factura_wh else '0'
+            match = None
+            for linea in lineas:
+                ctrl = Periodo._norm_ctrl(str(linea.get('nro_control') or ''))
+                fact = Periodo._norm_factura(str(linea.get('nro_factura') or ''))
+                if ((objetivo_ctrl != '0' and ctrl == objetivo_ctrl)
+                        or (objetivo_fact != '0' and fact == objetivo_fact)):
+                    match = linea
+                    break
+            data = match or lineas[0]
+            otras = [l for l in lineas if l is not data]
 
         vals = {}
         if data.get('nro_comprobante'):
@@ -567,6 +616,20 @@ class WizardSubirComprobante(models.TransientModel):
         for k, label in labels.items():
             if data.get(k) is not None:
                 resumen.append(f'{label}: {data[k]}')
+        if otras:
+            resumen += [
+                '',
+                f'⚠ Comprobante consolidado — detectó {len(lineas)} documentos en '
+                'el mismo archivo. Este comprobante también incluye los siguientes, '
+                'NO vinculados aquí -- súbelos a mano en sus propias retenciones:',
+            ]
+            for l in otras:
+                extra = f" — afecta {l['documento_afectado']}" if l.get('documento_afectado') else ''
+                resumen.append(
+                    f"  · N° Control {l.get('nro_control') or '—'} / "
+                    f"N° Factura {l.get('nro_factura') or '—'} "
+                    f"({l.get('tipo_transaccion') or '—'}){extra}"
+                )
         vals['texto_ocr'] = '\n'.join(resumen)
 
         _logger.info('ve_retencion_iva OCR-Claude: %s', list(vals.keys()))
