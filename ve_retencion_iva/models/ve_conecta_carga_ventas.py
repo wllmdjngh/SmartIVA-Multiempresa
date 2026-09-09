@@ -509,28 +509,6 @@ _HEADER_FALLBACK = [
 _CAMPOS_MAPEABLES = sorted(set(_HEADER_MAP.values()))
 
 
-def _parsear_mapeo_manual(texto):
-    """Parsea el Text de 'Mapeo Manual de Columnas' -- una línea por
-    columna, formato 'Encabezado tal cual aparece en el archivo =
-    campo_destino'. Devuelve {header_normalizado: campo}. Ignora líneas
-    vacías/mal formadas y valida `campo` contra _CAMPOS_MAPEABLES (un typo
-    en el campo destino del propio mapeo manual no debe crear un campo
-    inventado en silencio -- mismo principio que el resto del parseo del
-    archivo)."""
-    resultado = {}
-    for linea in (texto or '').splitlines():
-        linea = linea.strip()
-        if not linea or '=' not in linea:
-            continue
-        header, campo = linea.split('=', 1)
-        header = _norm_header(header.strip())
-        campo = campo.strip()
-        if not header or campo not in _CAMPOS_MAPEABLES:
-            continue
-        resultado[header] = campo
-    return resultado
-
-
 _AMOUNT_FIELDS = {'base_16', 'base_8', 'base_exento', 'monto_retenido',
                   'base_generica', 'alicuota_pct', 'total_documento', 'monto_iva'}
 
@@ -641,16 +619,16 @@ class VeConectaCargaVentas(models.Model):
              'resto del archivo, no un solo criterio para todas. Aplica '
              'tanto a fechas de TEXTO como a fechas REALES de Excel ya '
              'resueltas por openpyxl.')
-    mapeo_manual = fields.Text(
+    mapeo_manual_ids = fields.One2many(
+        've.conecta.carga.ventas.mapeo.manual', 'carga_id',
         string='Mapeo Manual de Columnas',
         help='Para columnas del archivo que SmartIVA no reconoce '
              'automáticamente (typo del cliente, nombre distinto al '
-             'esperado) -- una línea por columna, formato "Encabezado tal '
-             'cual aparece en el archivo = campo_destino". Ej: "Tipo de '
-             'Transacion = tipo_transaccion". Se aplica ANTES del '
-             'reconocimiento automático (gana si compite con un sinónimo '
-             'ya conocido) -- después de completarlo, vuelva a '
-             'Previsualizar. Campos válidos: ' + ', '.join(_CAMPOS_MAPEABLES))
+             'esperado) -- elija la columna sin reconocer y a qué campo '
+             'mapearla (o "Ignorar" si a propósito no interesa '
+             'capturarla). Se aplica ANTES del reconocimiento automático '
+             '(gana si compite con un sinónimo ya conocido) -- después de '
+             'completarlo, vuelva a Previsualizar.')
     headers_no_reconocidos = fields.Text(
         string='Columnas no reconocidas', readonly=True, copy=False,
         help='Encabezados del archivo que no matchearon ningún campo de '
@@ -868,7 +846,13 @@ class VeConectaCargaVentas(models.Model):
         # A1 (2026-09-09) -- Mapeo Manual gana sobre el reconocimiento
         # automático: se aplica primero, así una columna que el usuario
         # mapeó a mano no se pisa con un sinónimo/fallback distinto.
-        mapeo_manual = _parsear_mapeo_manual(self.mapeo_manual)
+        # "_ignorar" no entra a col_map (no se lee), pero SÍ cuenta como
+        # "resuelta" más abajo -- deja de aparecer en headers_no_reconocidos.
+        mapeo_manual = {
+            _norm_header(r.header_original): r.campo_destino
+            for r in self.mapeo_manual_ids if r.header_original and r.campo_destino
+        }
+        ignorados_norm = {h for h, campo in mapeo_manual.items() if campo == '_ignorar'}
 
         col_map = {}
         for i, h in enumerate(encabezado):
@@ -876,7 +860,8 @@ class VeConectaCargaVentas(models.Model):
                 continue
             norm = _norm_header(str(h))
             if norm in mapeo_manual:
-                col_map[i] = mapeo_manual[norm]
+                if mapeo_manual[norm] != '_ignorar':
+                    col_map[i] = mapeo_manual[norm]
             elif norm in _HEADER_MAP:
                 col_map[i] = _HEADER_MAP[norm]
 
@@ -899,6 +884,7 @@ class VeConectaCargaVentas(models.Model):
         no_reconocidos = sorted({
             str(h).strip() for i, h in enumerate(encabezado)
             if h is not None and str(h).strip() and i not in col_map
+            and _norm_header(str(h)) not in ignorados_norm
         })
         self.headers_no_reconocidos = '\n'.join(no_reconocidos) if no_reconocidos else False
 
@@ -2976,6 +2962,42 @@ class VeConectaCargaVentas(models.Model):
             'view_mode': 'form',
             'target': 'current',
         }
+
+
+class VeConectaCargaVentasMapeoManual(models.Model):
+    _name = 've.conecta.carga.ventas.mapeo.manual'
+    _description = 'Mapeo Manual de Columnas — Carga Libro de Ventas'
+
+    carga_id = fields.Many2one(
+        've.conecta.carga.ventas', string='Carga', required=True, ondelete='cascade')
+    header_original = fields.Selection(
+        selection='_selection_header_original', string='Columna del archivo', required=True,
+        help='Encabezado tal cual aparece en el archivo, sin reconocer '
+             'automáticamente en la última Previsualización.')
+    campo_destino = fields.Selection(
+        selection='_selection_campo_destino', string='Mapear a', required=True,
+        help='Campo de SmartIVA al que corresponde esta columna, o '
+             '"Ignorar" si es una columna que a propósito no interesa '
+             'capturar -- en ambos casos deja de aparecer como columna '
+             'sin reconocer.')
+
+    def _selection_campo_destino(self):
+        return [(c, c) for c in _CAMPOS_MAPEABLES] + [('_ignorar', 'Ignorar (no mapear)')]
+
+    def _selection_header_original(self):
+        """Opciones del menú izquierdo: headers sin reconocer de la carga
+        de este mapeo (dinámico -- cambia con cada Previsualizar). Incluye
+        también el valor YA elegido en filas existentes (aunque ya no esté
+        en headers_no_reconocidos porque este mismo mapeo lo resolvió),
+        para no perder la selección al reabrir el formulario."""
+        opciones = set()
+        for rec in self:
+            carga = rec.carga_id
+            if carga and carga.headers_no_reconocidos:
+                opciones.update(carga.headers_no_reconocidos.splitlines())
+            if rec.header_original:
+                opciones.add(rec.header_original)
+        return [(h, h) for h in sorted(opciones)]
 
 
 class VeConectaCargaVentasLinea(models.Model):
