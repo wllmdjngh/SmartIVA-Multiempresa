@@ -1309,6 +1309,14 @@ class VeConectaCargaVentas(models.Model):
         # real (Cliente no es Agente de Retención vs. anomalía a revisar),
         # en vez de un solo número sin explicación.
         sin_retencion_lineas = []
+        # A2 (2026-09-09) -- NC Caso A (anula/reduce la retención ORIGINAL,
+        # no genera una ve.wh.iva propia para la NC) caía en
+        # sin_retencion_lineas por descarte -- correcto que no aparezca en
+        # wh_tracking (no hay retención NUEVA), pero incorrecto que
+        # apareciera en Tabla 1 como "Sin Retención -- revisar" (categoría
+        # pensada para el hook nativo fallando, no para esto). Bucket
+        # aparte, sin alarmar.
+        nc_ajustadas_lineas = []
         WhIva = self.env['ve.wh.iva'].sudo()
         # RIF normalizado -> partner ya creado en ESTE mismo confirmar. Bug
         # real 2026-07-30: sin esta caché, un cliente nuevo (sin partner
@@ -1442,6 +1450,7 @@ class VeConectaCargaVentas(models.Model):
                         # para el mismo síntoma).
                         retencion_original = WhIva.search(
                             [('invoice_id', '=', factura_registro.id)], limit=1)
+                        nc_caso_a_procesada = False
                         if retencion_original:
                             ya_declarada = _retencion_ya_declarada(self.env, retencion_original)
                             # Instrumentación 2026-09-04 -- bug real encontrado
@@ -1477,6 +1486,7 @@ class VeConectaCargaVentas(models.Model):
                                     ),
                                 })
                                 retencion_original.action_anular()
+                                nc_caso_a_procesada = True
                             elif ya_declarada:
                                 # Caso B: ya practicada/declarada -- NO se
                                 # toca (confirmado con el contador: siempre
@@ -1564,6 +1574,8 @@ class VeConectaCargaVentas(models.Model):
                                 'monto_iva_archivo': linea.monto_iva,
                                 'viene_de_libro_ventas': True,
                             })
+                        elif nc_caso_a_procesada:
+                            nc_ajustadas_lineas.append(linea)
                         else:
                             sin_retencion_lineas.append(linea)
                     except Exception as exc:
@@ -1608,29 +1620,50 @@ class VeConectaCargaVentas(models.Model):
                         f'Control "{linea.nro_control}" ya no se pudo volver a '
                         f'encontrar al confirmar.')
                     continue
+
+                # A6 (2026-09-09) -- esto es un POST-MORTEM: la anulación YA
+                # ocurrió en el ERP real de Vencement, el Libro de Ventas
+                # solo la reporta. Cancelar también la factura en Odoo (no
+                # solo la retención) para que refleje ese hecho ya ocurrido.
+                # Si Odoo la rechaza (pago reconciliado, período bloqueado),
+                # NO se toca nada -- ni factura ni retención -- queda para
+                # revisión manual, mismo principio de "no tocar en silencio
+                # si algo no calza" del resto del módulo.
+                if factura_anulada.state == 'posted':
+                    try:
+                        with self.env.cr.savepoint():
+                            factura_anulada.button_cancel()
+                    except Exception as exc:
+                        errores.append(
+                            f'Fila {linea.fila}: Anulación -- no se pudo cancelar la '
+                            f'factura {factura_anulada.name} ({exc}) -- probablemente '
+                            f'tiene pagos reconciliados o el período está bloqueado. '
+                            f'Revisar a mano; la retención tampoco se tocó.')
+                        continue
+
                 retencion_a_anular = WhIva.search(
                     [('invoice_id', '=', factura_anulada.id)], limit=1)
                 if not retencion_a_anular or retencion_a_anular.state == 'anulado':
                     # Sin retención asociada, o ya estaba anulada -- nada
-                    # que hacer, solo vincular la fila para que no quede
+                    # más que hacer, solo vincular la fila para que no quede
                     # "pendiente" en los conteos de arriba.
                     linea.invoice_id = factura_anulada.id
                     continue
                 if _retencion_ya_declarada(self.env, retencion_a_anular):
                     # Caso B (ya declarada/confirmada) -- mismo criterio ya
                     # establecido para NC: nunca se toca lo ya practicado.
-                    # Queda para revisión manual, no se auto-anula.
+                    # La factura SÍ queda cancelada (arriba), pero la
+                    # retención queda para revisión manual, no se auto-anula.
                     linea.invoice_id = factura_anulada.id
                     errores.append(
-                        f'Fila {linea.fila}: Anulación -- la retención de '
-                        f'{factura_anulada.name} ya fue declarada/confirmada, no '
+                        f'Fila {linea.fila}: Anulación -- la factura {factura_anulada.name} '
+                        f'se canceló, pero su retención ya fue declarada/confirmada, no '
                         f'se anula automáticamente. Revisar a mano.')
                     continue
                 retencion_a_anular.write({
                     'motivo_anulacion': (
                         f'Anulado automáticamente -- la factura {factura_anulada.name} '
-                        f'llegó marcada como Anulación en el Libro de Ventas '
-                        f'(fila {linea.fila}).'
+                        f'llegó marcada como Anulación en el Libro de Ventas.'
                     ),
                 })
                 retencion_a_anular.action_anular()
@@ -1707,6 +1740,7 @@ class VeConectaCargaVentas(models.Model):
                     # y TABLA_ESCENARIOS_NC.md).
                     retencion_afectada = WhIva.search(
                         [('invoice_id', '=', factura_afectada.id)], limit=1)
+                    nc_caso_a_procesada = False
                     if retencion_afectada:
                         ya_declarada = _retencion_ya_declarada(self.env, retencion_afectada)
                         monto_nc = (abs(linea.base_16 or 0) + abs(linea.base_8 or 0)
@@ -1751,6 +1785,7 @@ class VeConectaCargaVentas(models.Model):
                                     ),
                                 })
                                 retencion_afectada.action_anular()
+                                nc_caso_a_procesada = True
                             else:
                                 retencion_afectada.write({
                                     'monto_base': round((retencion_afectada.monto_base or 0) * factor, 2),
@@ -1763,6 +1798,7 @@ class VeConectaCargaVentas(models.Model):
                                           f'Crédito parcial {nc.name} (fila {linea.fila}) '
                                           f'revierte Bs. {monto_nc:,.2f} de esta factura.'),
                                     message_type='comment', subtype_xmlid='mail.mt_note')
+                                nc_caso_a_procesada = True
                         elif ya_declarada:
                             # Reversión PARCIAL -- el ajuste solo espeja el
                             # monto que ESTA Nota de Crédito revierte
@@ -1832,6 +1868,8 @@ class VeConectaCargaVentas(models.Model):
                             'monto_iva_archivo': linea.monto_iva,
                             'viene_de_libro_ventas': True,
                         })
+                    elif nc_caso_a_procesada:
+                        nc_ajustadas_lineas.append(linea)
                     else:
                         sin_retencion_lineas.append(linea)
                 except Exception as exc:
@@ -2396,6 +2434,15 @@ class VeConectaCargaVentas(models.Model):
                 sin_ret_con_monto_archivo += linea.monto_retenido
         sin_retencion = len(sin_retencion_lineas)
 
+        # A2 (2026-09-09) -- NC Caso A: ajustó (anuló/redujo) la retención
+        # de la factura ORIGINAL, no genera una ve.wh.iva propia -- bucket
+        # aparte de sin_retencion_lineas, para no mostrarla como anomalía
+        # a revisar (ver nc_caso_a_procesada más arriba en action_confirmar).
+        nc_ajustadas = len(nc_ajustadas_lineas)
+        base_nc_ajustadas = sum(
+            abs(l.base_16 or 0) + abs(l.base_8 or 0) + abs(l.base_exento or 0)
+            for l in nc_ajustadas_lineas)
+
         # Rechazadas — pedido explícito 2026-08-20: la tabla de abajo antes
         # solo mostraba "Sin Retención" (facturas SÍ creadas sin retención),
         # dejando las rechazadas (NUNCA llegaron a ser factura) fuera de
@@ -2420,7 +2467,7 @@ class VeConectaCargaVentas(models.Model):
         # Retenciones Generadas (Tabla 2) + Sin Retención + Rechazadas debe
         # sumar Filas Leídas -- pedido explícito.
         total_filas = len(self.linea_ids)
-        no_generadas = sin_retencion + rechazadas
+        no_generadas = sin_retencion + rechazadas + nc_ajustadas
         suma_cuadra = (retenciones_creadas + no_generadas) == total_filas
 
         # ══ Tabla 1 — Facturas ══════════════════════════════════════════
@@ -2470,7 +2517,7 @@ class VeConectaCargaVentas(models.Model):
                 f'<span style="color:#dc3545;">Rechazada — {etiqueta}</span>',
                 _n(b['n']), _m(b['base']))
 
-        base_no_generadas = (base_agente_true + base_agente_false
+        base_no_generadas = (base_agente_true + base_agente_false + base_nc_ajustadas
                               + sum(b['base'] for b in rechazadas_por_categoria.values()))
         tabla_1_facturas = (
             f'<table style="border-collapse:collapse; font-size:0.85rem;">'
@@ -2481,6 +2528,8 @@ class VeConectaCargaVentas(models.Model):
             + _fila1('Facturas creadas', _n(creadas), _m(base_archivo_tot), _m(base_odoo_tot),
                      _m(dif_base) if abs(dif_base) > 0.01 else 'cuadra',
                      color='#dc3545' if abs(dif_base) > 0.01 else '#198754')
+            + _fila1('Notas de Crédito — ajustaron la retención de la factura original '
+                     '(no generan retención propia)', _n(nc_ajustadas), _m(base_nc_ajustadas))
             + filas_rechazadas_html
             + _fila1('Sin Retención — Cliente NO es Agente de Retención (no le correspondía retener)',
                      _n(sin_ret_agente_false), _m(base_agente_false))
@@ -2488,13 +2537,14 @@ class VeConectaCargaVentas(models.Model):
                      'Retención pero no se generó (revisar)</span>',
                      _n(sin_ret_agente_true), _m(base_agente_true))
             + f'<tr style="font-weight:700; border-top:2px solid #999;">'
-              f'<td {td}>TOTAL Rechazadas + Sin Retención</td>'
+              f'<td {td}>TOTAL Rechazadas + Sin Retención + NC Ajustadas</td>'
               f'<td {tdr}>{_n(no_generadas)}</td>'
               f'<td {tdr}>{_m(base_no_generadas)}</td><td {tdr}>—</td><td {tdr}>—</td></tr>'
             + '</table>'
             + f'<p style="font-size:0.75rem; color:#666;">CHEQUEO: Retenciones Generadas '
               f'(Tabla 2: {_n(retenciones_creadas)}) + Sin Retención '
-              f'({_n(sin_retencion)}) + Rechazadas ({_n(rechazadas)}) = '
+              f'({_n(sin_retencion)}) + NC Ajustadas ({_n(nc_ajustadas)}) + Rechazadas '
+              f'({_n(rechazadas)}) = '
               f'<span style="color:{"#198754" if suma_cuadra else "#dc3545"};">'
               f'{_n(retenciones_creadas + no_generadas)}</span> '
               f'— debe cuadrar con Filas Leídas ({_n(total_filas)})</p>'
@@ -3145,7 +3195,7 @@ class VeConectaCargaVentasLinea(models.Model):
         ('nota_credito_parcial', 'Nota de Crédito parcial'),
         ('doc_afectado_no_encontrado', 'Documento Afectado no encontrado'),
         ('nota_credito_sin_doc_afectado', 'Nota de Crédito sin Documento Afectado'),
-        ('anulacion_retencion_pendiente', 'Anulación — retención a anular'),
+        ('anulacion_retencion_pendiente', 'Anulación — factura y retención a anular'),
     ], compute='_compute_partner_id', store=True, string='Categoría',
         help='Agrupa brecha/bloqueante en 6 categorías para la pestaña '
              'Discrepancias (2026-08-14) -- False si la fila no tiene ningún '
@@ -3534,14 +3584,17 @@ class VeConectaCargaVentasLinea(models.Model):
                 # rama de abajo y quedaba bloqueada como "Factura
                 # duplicada" sin más -- la retención original de esa
                 # factura nunca se tocaba, seguía esperando el pago de un
-                # impuesto sobre algo ya anulado. No bloquea -- se anula la
-                # retención automáticamente al confirmar (ver
+                # impuesto sobre algo ya anulado. No bloquea -- es un
+                # post-mortem (la anulación ya ocurrió en el ERP real del
+                # cliente): al confirmar se cancela también la factura en
+                # Odoo, y se anula la retención automáticamente (ver
                 # action_confirmar), mismo mecanismo action_anular() que ya
                 # usa el Caso A de Nota de Crédito.
                 linea.bloqueante = False
                 linea.categoria_discrepancia = 'anulacion_retencion_pendiente'
                 linea.brecha = (f'Anulación — factura {match_ctrl_posteado.name} ya '
-                                 f'existe, su retención se anulará al confirmar')
+                                 f'existe, se cancelará y su retención se anulará al '
+                                 f'confirmar')
             elif linea.es_duplicado_factura:
                 linea.bloqueante = True
                 linea.categoria_discrepancia = 'duplicada'

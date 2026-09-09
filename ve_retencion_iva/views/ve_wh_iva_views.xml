@@ -271,10 +271,10 @@
                         <strong>COMPROBANTE ANULADO</strong>
                         — Anulado por
                         <field name="anulado_por" readonly="1" nolabel="1"
-                               class="d-inline"/>
+                               class="oe_inline"/>
                         &#160;|&#160; Motivo:
                         <field name="motivo_anulacion" readonly="1" nolabel="1"
-                               class="d-inline"/>
+                               class="oe_inline"/>
                     </div>
 
                     <!-- Banner fuera de plazo -->
