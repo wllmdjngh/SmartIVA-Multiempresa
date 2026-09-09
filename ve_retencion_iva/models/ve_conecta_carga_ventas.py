@@ -2858,7 +2858,28 @@ class VeConectaCargaVentas(models.Model):
         WhIva = self.env['ve.wh.iva'].sudo()
 
         facturas = self.linea_ids.mapped('invoice_id').sudo()
+
+        # A6 (2026-09-09) -- BUG REAL encontrado probando en Multiempresa:
+        # una fila de Anulación (00-ANU) vincula invoice_id a una factura
+        # PRE-EXISTENTE de OTRA carga (no la crea -- ver action_confirmar,
+        # categoría 'anulacion_retencion_pendiente'). Sin este filtro,
+        # Deshacer Carga borraba esa factura ajena como si esta carga la
+        # hubiera creado -- se perdió FA-9004 (de una carga previa YA
+        # confirmada) al deshacer una carga distinta que solo la
+        # referenciaba. Cualquier factura que TAMBIÉN sea invoice_id de una
+        # línea de OTRA carga no se toca acá, se avisa en vez de borrarla.
+        Linea = self.env['ve.conecta.carga.ventas.linea'].sudo()
+        lineas_ajenas = Linea.search([
+            ('invoice_id', 'in', facturas.ids), ('carga_id', '!=', self.id)])
+        facturas_ajenas = lineas_ajenas.mapped('invoice_id')
         errores = []
+        if facturas_ajenas:
+            errores.append(
+                f'{len(facturas_ajenas)} factura(s) NO se tocaron -- también están '
+                f'vinculadas a otra carga (ej. una Anulación que solo las referencia, '
+                f'sin haberlas creado esta carga): '
+                f'{", ".join(facturas_ajenas.mapped("name"))}.')
+        facturas = facturas - facturas_ajenas
         n_pagos = n_ret = n_fact = 0
 
         # 0. Capturar ANTES de borrar nada: facturas PRE-EXISTENTES (de
