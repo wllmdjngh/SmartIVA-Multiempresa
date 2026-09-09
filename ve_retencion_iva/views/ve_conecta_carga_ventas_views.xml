@@ -298,12 +298,23 @@
                         </group>
                     </group>
 
+                    <div class="alert alert-warning" role="alert" invisible="not headers_no_reconocidos">
+                        <i class="fa fa-exclamation-triangle" title="Advertencia"/>&#160;
+                        <strong>Columnas del archivo sin reconocer (se est&#225;n ignorando):</strong>
+                        <field name="headers_no_reconocidos" nolabel="1" readonly="1" class="d-block"/>
+                        Compl&#233;telas abajo en "Mapeo Manual de Columnas" y vuelva a Previsualizar.
+                    </div>
+                    <group invisible="estado == 'confirmado'">
+                        <field name="mapeo_manual" nolabel="1" colspan="2" placeholder="Tipo de Transacion = tipo_transaccion"/>
+                    </group>
+
                     <field name="linea_ids" readonly="estado == 'confirmado'">
                         <list editable="bottom" decoration-danger="bloqueante" decoration-warning="brecha and not bloqueante">
                             <field name="fila" readonly="1"/>
                             <field name="rif"/>
                             <field name="nombre_cliente"/>
                             <field name="tipo_transaccion" string="TipoTR" optional="show"/>
+                            <field name="es_anulacion" string="Anula" optional="show"/>
                             <field name="nro_control"/>
                             <field name="nro_documento"/>
                             <field name="fecha"/>

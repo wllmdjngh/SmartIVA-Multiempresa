@@ -199,7 +199,15 @@ def _normalizar_tipo_transaccion(val):
     Crédito) — acepta el código numérico directo o el nombre en texto
     (con o sin acentos/mayúsculas). Devuelve False si no reconoce nada,
     en vez de adivinar. Insumo para AJUSTE-FISCAL-01/02 (ver REQUISITOS.md),
-    no bloquea ni reemplaza todavía la detección Registro+Anulación."""
+    no bloquea ni reemplaza todavía la detección Registro+Anulación.
+
+    A2 (2026-09-09) -- códigos compuestos reales de Vencement (ej.
+    "01-REG"/"02-NC"/"00-ANU"/"03-ANU-NC"): se detectan por TOKEN de texto
+    (REG/NC/ND), nunca por el número líder -- ese cliente usa "02" para
+    Crédito, al revés de la convención interna de acá (02=Débito). "ANU"
+    NO es un token de tipo de documento (ver _es_anulacion_tipo_transaccion,
+    señal aparte) -- un "00-ANU" no es NC ni ND, un "03-ANU-NC" es NC Y
+    anulación a la vez, las 2 funciones se combinan, no se excluyen."""
     s = (val or '').strip().upper()
     s = ''.join(c for c in unicodedata.normalize('NFD', s)
                 if unicodedata.category(c) != 'Mn')
@@ -215,7 +223,27 @@ def _normalizar_tipo_transaccion(val):
         return '02'
     if 'FACTURA' in s or 'REGULAR' in s:
         return '01'
+    tokens = set(re.split(r'[^A-Z]+', s)) - {''}
+    if 'NC' in tokens:
+        return '03'
+    if 'ND' in tokens:
+        return '02'
+    if 'REG' in tokens:
+        return '01'
     return False
+
+
+def _es_anulacion_tipo_transaccion(val):
+    """True si el código de Tipo de Transacción indica que ESTA fila anula
+    algo (ej. "00-ANU", "03-ANU-NC") -- señal INDEPENDIENTE de si además es
+    NC/ND (ver _normalizar_tipo_transaccion). Token exacto ('ANU'), no
+    substring `in`, para no dar falsos positivos con nombres que
+    casualmente contengan esas letras."""
+    s = (val or '').strip().upper()
+    s = ''.join(c for c in unicodedata.normalize('NFD', s)
+                if unicodedata.category(c) != 'Mn')
+    tokens = set(re.split(r'[^A-Z]+', s)) - {''}
+    return 'ANU' in tokens
 
 
 def _buscar_factura_por_doc_afectado(env, company, doc_afectado, zona=None):
@@ -472,6 +500,37 @@ _HEADER_FALLBACK = [
     ('razon social', 'nombre_cliente'),
 ]
 
+# A1 (2026-09-09) -- campos válidos para "Mapeo Manual de Columnas": cuando
+# un header del archivo no matchea ningún sinónimo conocido (typo del
+# cliente, nombre distinto), en vez de ignorarlo en silencio, el usuario
+# puede mapearlo a mano a cualquiera de estos campos destino -- el mismo
+# universo de valores que ya usa _HEADER_MAP, para no inventar un campo
+# que el resto del código no sepa leer.
+_CAMPOS_MAPEABLES = sorted(set(_HEADER_MAP.values()))
+
+
+def _parsear_mapeo_manual(texto):
+    """Parsea el Text de 'Mapeo Manual de Columnas' -- una línea por
+    columna, formato 'Encabezado tal cual aparece en el archivo =
+    campo_destino'. Devuelve {header_normalizado: campo}. Ignora líneas
+    vacías/mal formadas y valida `campo` contra _CAMPOS_MAPEABLES (un typo
+    en el campo destino del propio mapeo manual no debe crear un campo
+    inventado en silencio -- mismo principio que el resto del parseo del
+    archivo)."""
+    resultado = {}
+    for linea in (texto or '').splitlines():
+        linea = linea.strip()
+        if not linea or '=' not in linea:
+            continue
+        header, campo = linea.split('=', 1)
+        header = _norm_header(header.strip())
+        campo = campo.strip()
+        if not header or campo not in _CAMPOS_MAPEABLES:
+            continue
+        resultado[header] = campo
+    return resultado
+
+
 _AMOUNT_FIELDS = {'base_16', 'base_8', 'base_exento', 'monto_retenido',
                   'base_generica', 'alicuota_pct', 'total_documento', 'monto_iva'}
 
@@ -582,6 +641,22 @@ class VeConectaCargaVentas(models.Model):
              'resto del archivo, no un solo criterio para todas. Aplica '
              'tanto a fechas de TEXTO como a fechas REALES de Excel ya '
              'resueltas por openpyxl.')
+    mapeo_manual = fields.Text(
+        string='Mapeo Manual de Columnas',
+        help='Para columnas del archivo que SmartIVA no reconoce '
+             'automáticamente (typo del cliente, nombre distinto al '
+             'esperado) -- una línea por columna, formato "Encabezado tal '
+             'cual aparece en el archivo = campo_destino". Ej: "Tipo de '
+             'Transacion = tipo_transaccion". Se aplica ANTES del '
+             'reconocimiento automático (gana si compite con un sinónimo '
+             'ya conocido) -- después de completarlo, vuelva a '
+             'Previsualizar. Campos válidos: ' + ', '.join(_CAMPOS_MAPEABLES))
+    headers_no_reconocidos = fields.Text(
+        string='Columnas no reconocidas', readonly=True, copy=False,
+        help='Encabezados del archivo que no matchearon ningún campo de '
+             'SmartIVA ni el Mapeo Manual en la última Previsualización -- '
+             'hoy se ignoran. Use "Mapeo Manual de Columnas" arriba para '
+             'capturarlos.')
 
     estado = fields.Selection([
         ('borrador',    'Borrador — Vista Previa'),
@@ -790,12 +865,19 @@ class VeConectaCargaVentas(models.Model):
         if encabezado is None:
             raise UserError('El archivo no tiene encabezados.')
 
+        # A1 (2026-09-09) -- Mapeo Manual gana sobre el reconocimiento
+        # automático: se aplica primero, así una columna que el usuario
+        # mapeó a mano no se pisa con un sinónimo/fallback distinto.
+        mapeo_manual = _parsear_mapeo_manual(self.mapeo_manual)
+
         col_map = {}
         for i, h in enumerate(encabezado):
             if h is None:
                 continue
             norm = _norm_header(str(h))
-            if norm in _HEADER_MAP:
+            if norm in mapeo_manual:
+                col_map[i] = mapeo_manual[norm]
+            elif norm in _HEADER_MAP:
                 col_map[i] = _HEADER_MAP[norm]
 
         mapeadas_ya = set(col_map.values())
@@ -810,6 +892,15 @@ class VeConectaCargaVentas(models.Model):
                     col_map[i] = field
                     mapeadas_ya.add(field)
                     break
+
+        # A1 -- headers que quedaron sin reconocer (ni sinónimo, ni
+        # fallback, ni mapeo manual), para mostrarle al usuario qué se
+        # está ignorando en vez de que se pierda en silencio.
+        no_reconocidos = sorted({
+            str(h).strip() for i, h in enumerate(encabezado)
+            if h is not None and str(h).strip() and i not in col_map
+        })
+        self.headers_no_reconocidos = '\n'.join(no_reconocidos) if no_reconocidos else False
 
         mapeadas = set(col_map.values())
         faltantes = {'rif', 'fecha', 'nro_documento'} - mapeadas
@@ -855,6 +946,7 @@ class VeConectaCargaVentas(models.Model):
                     vals[field] = _formatear_rif(str(cell).strip())
                 elif field == 'tipo_transaccion':
                     vals[field] = _normalizar_tipo_transaccion(str(cell))
+                    vals['es_anulacion'] = _es_anulacion_tipo_transaccion(str(cell))
                 else:
                     vals[field] = str(cell).strip()
             # Formato "largo" (Base Imponible + % Alíc./IVA genéricos por
@@ -1490,6 +1582,55 @@ class VeConectaCargaVentas(models.Model):
                     # (se omite sin crear nada), pendiente de extender
                     # también a Nota de Crédito.
                     continue
+            elif linea.categoria_discrepancia == 'anulacion_retencion_pendiente':
+                # A6 (2026-09-09) -- Anulación (00-ANU/03-ANU-NC) que
+                # matchea una factura YA posteada por N° de Control. No es
+                # un documento nuevo (a diferencia de NC/ND) -- es la MISMA
+                # factura reportada de nuevo como anulada, así que no se
+                # crea ninguna factura -- solo se anula la retención
+                # asociada, mismo mecanismo action_anular() que ya usa el
+                # Caso A de Nota de Crédito. Re-busca el match al confirmar
+                # (no reusa el de _compute_partner_id, distinto método) --
+                # mismo criterio que 'nota_credito_parcial' de abajo.
+                factura_anulada = Move.search([
+                    ('company_id', '=', self.company_id.id),
+                    ('move_type', '=', 'out_invoice'),
+                    ('nro_control', '=', linea.nro_control),
+                ], limit=1)
+                if not factura_anulada:
+                    errores.append(
+                        f'Fila {linea.fila}: Anulación -- la factura con N° de '
+                        f'Control "{linea.nro_control}" ya no se pudo volver a '
+                        f'encontrar al confirmar.')
+                    continue
+                retencion_a_anular = WhIva.search(
+                    [('invoice_id', '=', factura_anulada.id)], limit=1)
+                if not retencion_a_anular or retencion_a_anular.state == 'anulado':
+                    # Sin retención asociada, o ya estaba anulada -- nada
+                    # que hacer, solo vincular la fila para que no quede
+                    # "pendiente" en los conteos de arriba.
+                    linea.invoice_id = factura_anulada.id
+                    continue
+                if _retencion_ya_declarada(self.env, retencion_a_anular):
+                    # Caso B (ya declarada/confirmada) -- mismo criterio ya
+                    # establecido para NC: nunca se toca lo ya practicado.
+                    # Queda para revisión manual, no se auto-anula.
+                    linea.invoice_id = factura_anulada.id
+                    errores.append(
+                        f'Fila {linea.fila}: Anulación -- la retención de '
+                        f'{factura_anulada.name} ya fue declarada/confirmada, no '
+                        f'se anula automáticamente. Revisar a mano.')
+                    continue
+                retencion_a_anular.write({
+                    'motivo_anulacion': (
+                        f'Anulado automáticamente -- la factura {factura_anulada.name} '
+                        f'llegó marcada como Anulación en el Libro de Ventas '
+                        f'(fila {linea.fila}).'
+                    ),
+                })
+                retencion_a_anular.action_anular()
+                linea.invoice_id = factura_anulada.id
+                continue
             elif linea.categoria_discrepancia == 'nota_credito_parcial':
                 # Nota de Crédito PARCIAL explícita (Plan A, 2026-09-03) --
                 # detectada por Tipo de Transacción '03' + Documento
@@ -2312,7 +2453,9 @@ class VeConectaCargaVentas(models.Model):
         # sensación de que Tabla 1 "no cuadraba".
         ORDEN_CATEGORIAS = ['duplicada', 'dato_faltante', 'fecha_invalida',
                             'registro_anulacion', 'documento_vacio', 'error_posteo',
-                            'nota_credito_parcial', 'doc_afectado_no_encontrado', False]
+                            'nota_credito_parcial', 'doc_afectado_no_encontrado',
+                            'nota_credito_sin_doc_afectado',
+                            'anulacion_retencion_pendiente', False]
         for cat in ORDEN_CATEGORIAS:
             if cat not in rechazadas_por_categoria:
                 continue
@@ -2907,10 +3050,16 @@ class VeConectaCargaVentasLinea(models.Model):
         ('03', '03 - Nota de Crédito'),
     ], string='Tipo de Transacción (TR)',
         help='Código SENIAT tal cual lo trae el archivo (ver '
-             '_normalizar_tipo_transaccion). Opcional e informativo por '
-             'ahora — insumo para AJUSTE-FISCAL-01/02 (Nota de Crédito/'
-             'Débito no ajustan la retención), todavía no conectado a esa '
-             'lógica ni a la detección Registro+Anulación existente.')
+             '_normalizar_tipo_transaccion, reconoce códigos compuestos '
+             'por token — ej. "02-NC" — desde A2, 2026-09-09). Insumo para '
+             'AJUSTE-FISCAL-01/02 (Nota de Crédito/Débito).')
+    es_anulacion = fields.Boolean(
+        string='Es Anulación', default=False,
+        help='True si el código de Tipo de Transacción trae el token '
+             '"ANU" (ej. "00-ANU", "03-ANU-NC") -- señal INDEPENDIENTE de '
+             'tipo_transaccion: un "00-ANU" no es NC/ND, un "03-ANU-NC" es '
+             'NC Y anulación a la vez. Ver _es_anulacion_tipo_transaccion '
+             '(A2/A6, 2026-09-09).')
     doc_afectado = fields.Char(
         string='Documento Afectado',
         help='N° de Factura/Control de la factura que esta fila (NC/ND) '
@@ -2955,6 +3104,8 @@ class VeConectaCargaVentasLinea(models.Model):
         ('error_posteo', 'Error al postear'),
         ('nota_credito_parcial', 'Nota de Crédito parcial'),
         ('doc_afectado_no_encontrado', 'Documento Afectado no encontrado'),
+        ('nota_credito_sin_doc_afectado', 'Nota de Crédito sin Documento Afectado'),
+        ('anulacion_retencion_pendiente', 'Anulación — retención a anular'),
     ], compute='_compute_partner_id', store=True, string='Categoría',
         help='Agrupa brecha/bloqueante en 6 categorías para la pestaña '
              'Discrepancias (2026-08-14) -- False si la fila no tiene ningún '
@@ -3186,12 +3337,19 @@ class VeConectaCargaVentasLinea(models.Model):
             es_dup_nro_existente = bool(match_existente)
             es_dup_nro_en_archivo = bool(match_en_archivo)
             es_dup_ctrl_en_archivo = bool(match_ctrl_en_archivo)
-            linea.es_duplicado_factura = bool(
-                (linea.nro_control and company and Move.search([
+            # A6 (2026-09-09) -- capturado en variable (antes solo se
+            # chequeaba con bool() sin guardar el match) para poder
+            # distinguir, más abajo, una Anulación (es_anulacion=True) que
+            # matchea una factura ya posteada de un duplicado real -- ver
+            # rama 'anulacion_retencion_pendiente'.
+            match_ctrl_posteado = (
+                linea.nro_control and company and Move.search([
                     ('company_id', '=', company.id),
                     ('move_type', '=', 'out_invoice'),
                     ('nro_control', '=', linea.nro_control),
-                ] + zona_domain, limit=1))
+                ] + zona_domain, limit=1)) or Move.browse()
+            linea.es_duplicado_factura = bool(
+                match_ctrl_posteado
                 or es_dup_nro_existente or es_dup_nro_en_archivo or es_dup_ctrl_en_archivo)
             # N° Factura contra retenciones existentes -- pedido explícito
             # 2026-08-12: ve.wh.iva también tiene nro_documento (no solo
@@ -3330,6 +3488,20 @@ class VeConectaCargaVentasLinea(models.Model):
                 linea.bloqueante = True
                 linea.categoria_discrepancia = 'fecha_invalida'
                 linea.brecha = 'Fecha no reconocida — revise el formato de la columna Fecha'
+            elif linea.es_anulacion and match_ctrl_posteado:
+                # A6 (2026-09-09) -- Anulación (00-ANU/03-ANU-NC) cuyo N° de
+                # Control matchea una factura YA posteada. Antes caía en la
+                # rama de abajo y quedaba bloqueada como "Factura
+                # duplicada" sin más -- la retención original de esa
+                # factura nunca se tocaba, seguía esperando el pago de un
+                # impuesto sobre algo ya anulado. No bloquea -- se anula la
+                # retención automáticamente al confirmar (ver
+                # action_confirmar), mismo mecanismo action_anular() que ya
+                # usa el Caso A de Nota de Crédito.
+                linea.bloqueante = False
+                linea.categoria_discrepancia = 'anulacion_retencion_pendiente'
+                linea.brecha = (f'Anulación — factura {match_ctrl_posteado.name} ya '
+                                 f'existe, su retención se anulará al confirmar')
             elif linea.es_duplicado_factura:
                 linea.bloqueante = True
                 linea.categoria_discrepancia = 'duplicada'
@@ -3356,13 +3528,37 @@ class VeConectaCargaVentasLinea(models.Model):
                 linea.bloqueante = True
                 linea.categoria_discrepancia = 'duplicada'
                 linea.brecha = 'Retención duplicada — ya existe (mismo N° Control o N° Factura)'
-            elif (linea.tipo_transaccion == '03' and linea.doc_afectado and base_propia < 0
+            elif ((linea.tipo_transaccion == '03' or not linea.tipo_transaccion)
+                  and not linea.doc_afectado and base_propia < 0
+                  and not linea.es_anulacion_par and not linea.par_linea_id):
+                # A5 (2026-09-09) -- Nota de Crédito (por código '03', o por
+                # el heurístico de respaldo de A2 cuando tipo_transaccion no
+                # resolvió nada -- monto negativo sin pareja en el archivo)
+                # SIN Documento Afectado: ningún caso la reconoce. Antes se
+                # intentaba postear igual como factura regular con monto
+                # negativo, que Odoo rechaza al postear (error de posteo
+                # genérico, sin pista de la causa real para quien revisa la
+                # carga). Bloquea acá con un mensaje legible en su lugar.
+                linea.bloqueante = True
+                linea.categoria_discrepancia = 'nota_credito_sin_doc_afectado'
+                linea.brecha = ('Nota de Crédito (monto negativo) sin Documento Afectado '
+                                 '— no se puede vincular a la factura que revierte, '
+                                 'revisar a mano')
+            elif ((linea.tipo_transaccion == '03' or not linea.tipo_transaccion)
+                  and linea.doc_afectado and base_propia < 0
                   and not linea.es_anulacion_par and not linea.par_linea_id):
                 # Nota de Crédito PARCIAL explícita (Plan A, 2026-09-03) --
                 # no neteó exacto con ninguna otra fila (arriba), pero trae
                 # Tipo de Transacción '03' + Documento Afectado. No bloquea
                 # -- se procesa al confirmar (ver action_confirmar), con la
                 # misma normalización que ya exige la sección 3.7.
+                #
+                # A2 (2026-09-09) -- también cubre el heurístico de respaldo:
+                # si tipo_transaccion no resolvió nada (código futuro/typo
+                # que _normalizar_tipo_transaccion no reconoce todavía),
+                # Documento Afectado + monto negativo alcanza para tratarla
+                # como NC igual, sin depender de acertar el texto exacto
+                # del código.
                 factura_nc_parcial = _buscar_factura_por_doc_afectado(
                     self.env, company, linea.doc_afectado, zona=linea.zona)
                 linea.bloqueante = False
