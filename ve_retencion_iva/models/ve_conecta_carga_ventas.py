@@ -635,6 +635,12 @@ class VeConectaCargaVentas(models.Model):
              'SmartIVA ni el Mapeo Manual en la última Previsualización -- '
              'hoy se ignoran. Use "Mapeo Manual de Columnas" arriba para '
              'capturarlos.')
+    headers_no_reconocidos_ids = fields.One2many(
+        've.conecta.carga.ventas.header.no.reconocido', 'carga_id',
+        string='Columnas sin reconocer (registros)', copy=False,
+        help='Mismo contenido que headers_no_reconocidos, pero como '
+             'registros reales -- alimenta el dominio del menú izquierdo '
+             'de Mapeo Manual de Columnas (Many2one por carga_id).')
 
     estado = fields.Selection([
         ('borrador',    'Borrador — Vista Previa'),
@@ -849,7 +855,7 @@ class VeConectaCargaVentas(models.Model):
         # "_ignorar" no entra a col_map (no se lee), pero SÍ cuenta como
         # "resuelta" más abajo -- deja de aparecer en headers_no_reconocidos.
         mapeo_manual = {
-            _norm_header(r.header_original): r.campo_destino
+            _norm_header(r.header_original.nombre): r.campo_destino
             for r in self.mapeo_manual_ids if r.header_original and r.campo_destino
         }
         ignorados_norm = {h for h, campo in mapeo_manual.items() if campo == '_ignorar'}
@@ -886,7 +892,20 @@ class VeConectaCargaVentas(models.Model):
             if h is not None and str(h).strip() and i not in col_map
             and _norm_header(str(h)) not in ignorados_norm
         })
-        self.headers_no_reconocidos = '\n'.join(no_reconocidos) if no_reconocidos else False
+        self.headers_no_reconocidos = ' · '.join(no_reconocidos) if no_reconocidos else False
+
+        # A1 -- sincroniza los registros reales (para el menú izquierdo del
+        # Mapeo Manual, Many2one con dominio por carga_id -- un Selection
+        # dinámico no sirve acá, Odoo lo evalúa con un recordset vacío al
+        # cargar la vista, no por fila). Solo AGREGA los que falten, nunca
+        # borra -- evita romper la referencia de una fila de Mapeo Manual
+        # ya resuelta que sigue apuntando a un header ya procesado.
+        ya_registrados = set(self.headers_no_reconocidos_ids.mapped('nombre'))
+        nuevos = [h for h in no_reconocidos if h not in ya_registrados]
+        if nuevos:
+            self.env['ve.conecta.carga.ventas.header.no.reconocido'].create([
+                {'carga_id': self.id, 'nombre': h} for h in nuevos
+            ])
 
         mapeadas = set(col_map.values())
         faltantes = {'rif', 'fecha', 'nro_documento'} - mapeadas
@@ -2964,16 +2983,30 @@ class VeConectaCargaVentas(models.Model):
         }
 
 
+class VeConectaCargaVentasHeaderNoReconocido(models.Model):
+    _name = 've.conecta.carga.ventas.header.no.reconocido'
+    _description = 'Columna sin reconocer — Carga Libro de Ventas'
+    _rec_name = 'nombre'
+
+    carga_id = fields.Many2one(
+        've.conecta.carga.ventas', string='Carga', required=True, ondelete='cascade')
+    nombre = fields.Char(string='Encabezado', required=True)
+
+
 class VeConectaCargaVentasMapeoManual(models.Model):
     _name = 've.conecta.carga.ventas.mapeo.manual'
     _description = 'Mapeo Manual de Columnas — Carga Libro de Ventas'
 
     carga_id = fields.Many2one(
         've.conecta.carga.ventas', string='Carga', required=True, ondelete='cascade')
-    header_original = fields.Selection(
-        selection='_selection_header_original', string='Columna del archivo', required=True,
+    header_original = fields.Many2one(
+        've.conecta.carga.ventas.header.no.reconocido', string='Columna del archivo',
+        required=True, domain="[('carga_id', '=', carga_id)]",
         help='Encabezado tal cual aparece en el archivo, sin reconocer '
-             'automáticamente en la última Previsualización.')
+             'automáticamente en la última Previsualización. Menú '
+             'filtrado por esta misma carga (Many2one con dominio -- un '
+             'Selection dinámico no sirve acá, Odoo lo evalúa una sola '
+             'vez con un recordset vacío al cargar la vista, no por fila).')
     campo_destino = fields.Selection(
         selection='_selection_campo_destino', string='Mapear a', required=True,
         help='Campo de SmartIVA al que corresponde esta columna, o '
@@ -2982,22 +3015,7 @@ class VeConectaCargaVentasMapeoManual(models.Model):
              'sin reconocer.')
 
     def _selection_campo_destino(self):
-        return [(c, c) for c in _CAMPOS_MAPEABLES] + [('_ignorar', 'Ignorar (no mapear)')]
-
-    def _selection_header_original(self):
-        """Opciones del menú izquierdo: headers sin reconocer de la carga
-        de este mapeo (dinámico -- cambia con cada Previsualizar). Incluye
-        también el valor YA elegido en filas existentes (aunque ya no esté
-        en headers_no_reconocidos porque este mismo mapeo lo resolvió),
-        para no perder la selección al reabrir el formulario."""
-        opciones = set()
-        for rec in self:
-            carga = rec.carga_id
-            if carga and carga.headers_no_reconocidos:
-                opciones.update(carga.headers_no_reconocidos.splitlines())
-            if rec.header_original:
-                opciones.add(rec.header_original)
-        return [(h, h) for h in sorted(opciones)]
+        return [('_ignorar', 'Ignorar (no mapear)')] + [(c, c) for c in _CAMPOS_MAPEABLES]
 
 
 class VeConectaCargaVentasLinea(models.Model):

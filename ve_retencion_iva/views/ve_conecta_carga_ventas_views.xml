@@ -251,11 +251,10 @@
                          groups="base.group_multi_company" invisible="estado == 'confirmado'">
                         <i class="fa fa-building me-2" title="Compañía"/>
                         <span>
-                            <strong>IMPORTANTE</strong> — Compañía
-                            <field name="company_id" nolabel="1" readonly="1"
-                                   class="d-inline fw-bold" options="{'no_open': True}"/>:
-                            verifique que esta es la compañía correcta para crear las facturas y
-                            retenciones ANTES de Confirmar Carga.
+                            Compañía <field name="company_id" nolabel="1" readonly="1"
+                                             class="d-inline fw-bold" options="{'no_open': True}"/><br/>
+                            <strong>IMPORTANTE</strong> — Verifique que esta es la compañía correcta
+                            para crear las facturas y retenciones ANTES de Confirmar Carga.
                         </span>
                     </div>
 
@@ -299,15 +298,15 @@
 
                     <div class="alert alert-warning" role="alert" invisible="not headers_no_reconocidos">
                         <i class="fa fa-exclamation-triangle" title="Advertencia"/>&#160;
-                        <strong>Columnas del archivo sin reconocer (se est&#225;n ignorando):</strong>
-                        <field name="headers_no_reconocidos" nolabel="1" readonly="1" class="d-block"/>
-                        Agr&#233;guelas abajo en "Mapeo Manual de Columnas" (elija la columna y a qu&#233;
-                        campo mapearla, o "Ignorar") y vuelva a Previsualizar.
+                        <strong>Columnas del archivo sin reconocer (se est&#225;n ignorando):
+                        <field name="headers_no_reconocidos" nolabel="1" readonly="1" class="d-inline"/> —
+                        agr&#233;guelas abajo en "Mapeo Manual de Columnas" (elija la columna y a qu&#233;
+                        campo mapearla, o "Ignorar") y vuelva a Previsualizar.</strong>
                     </div>
                     <group invisible="estado == 'confirmado'" string="Mapeo Manual de Columnas">
                         <field name="mapeo_manual_ids" nolabel="1" colspan="2">
                             <list editable="bottom">
-                                <field name="header_original"/>
+                                <field name="header_original" widget="selection" options="{'no_create': True, 'no_open': True}"/>
                                 <field name="campo_destino"/>
                             </list>
                         </field>
