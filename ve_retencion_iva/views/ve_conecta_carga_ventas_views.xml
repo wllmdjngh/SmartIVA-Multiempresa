@@ -251,8 +251,7 @@
                          groups="base.group_multi_company" invisible="estado == 'confirmado'">
                         <i class="fa fa-building me-2" title="Compañía"/>
                         <span>
-                            Compañía <field name="company_id" nolabel="1" readonly="1"
-                                             class="oe_inline fw-bold" options="{'no_open': True}"/><br/>
+                            Compañía <b><field name="company_name" nolabel="1" readonly="1"/></b><br/>
                             <strong>IMPORTANTE</strong> — Verifique que esta es la compañía correcta
                             para crear las facturas y retenciones ANTES de Confirmar Carga.
                         </span>

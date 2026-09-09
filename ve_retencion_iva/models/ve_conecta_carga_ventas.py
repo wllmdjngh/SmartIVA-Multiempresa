@@ -641,6 +641,11 @@ class VeConectaCargaVentas(models.Model):
         help='Mismo contenido que headers_no_reconocidos, pero como '
              'registros reales -- alimenta el dominio del menú izquierdo '
              'de Mapeo Manual de Columnas (Many2one por carga_id).')
+    company_name = fields.Char(
+        related='company_id.name', string='Nombre Compañía',
+        help='Texto plano del nombre de la compañía -- para el banner de '
+             'advertencia (el widget Many2one no se queda inline en '
+             'texto corrido, un Char relacionado sí).')
 
     estado = fields.Selection([
         ('borrador',    'Borrador — Vista Previa'),
@@ -1303,6 +1308,12 @@ class VeConectaCargaVentas(models.Model):
         # retención en vez de asumir que "traía monto en el feed" siempre
         # implica que quedó confirmada (pedido explícito 2026-08-01).
         wh_tracking = []
+        # A2 (2026-09-09) -- ids de ve.wh.iva que son un AJUSTE-NC-... (Caso
+        # B de Nota de Crédito), para excluirlos del desglose normal Con/Sin
+        # N° de Control de Tabla 2 (mezclados ahí caían en "Sin N° de
+        # Control (forzada al 100%, regla legal SPE)" -- etiqueta que no
+        # aplica en absoluto a un ajuste de NC) y darles su propia fila.
+        nc_ajuste_wh_ids = set()
         # Lineas creadas (con invoice_id) para las que el hook nativo NO
         # generó ninguna ve.wh.iva -- pedido explícito 2026-08-11, para
         # desglosar "Facturas sin Retención" en el Resumen por el motivo
@@ -1569,6 +1580,7 @@ class VeConectaCargaVentas(models.Model):
                         wh_creada_nc = WhIva.search([('invoice_id', '=', nc.id)], limit=1)
                         if wh_creada_nc:
                             wh_tracking.append((wh_creada_nc.id, linea.monto_retenido))
+                            nc_ajuste_wh_ids.add(wh_creada_nc.id)
                             wh_creada_nc.write({
                                 'monto_retenido_archivo': linea.monto_retenido,
                                 'monto_iva_archivo': linea.monto_iva,
@@ -1863,6 +1875,7 @@ class VeConectaCargaVentas(models.Model):
                     wh_creada_nc = WhIva.search([('invoice_id', '=', nc.id)], limit=1)
                     if wh_creada_nc:
                         wh_tracking.append((wh_creada_nc.id, linea.monto_retenido))
+                        nc_ajuste_wh_ids.add(wh_creada_nc.id)
                         wh_creada_nc.write({
                             'monto_retenido_archivo': linea.monto_retenido,
                             'monto_iva_archivo': linea.monto_iva,
@@ -2350,10 +2363,23 @@ class VeConectaCargaVentas(models.Model):
             True: {b: {'n': 0, 'archivo': 0.0, 'smartiva': 0.0} for b in BUCKET_ORDEN},
             False: {b: {'n': 0, 'archivo': 0.0, 'smartiva': 0.0} for b in BUCKET_ORDEN},
         }
+        # A2 (2026-09-09) -- AJUSTE-NC-... aparte, nunca entra al tally
+        # normal (Con/Sin N° de Control) -- caía en "Sin N° de Control
+        # (forzada al 100%, regla legal SPE)", una etiqueta que no tiene
+        # nada que ver con un ajuste de NC, solo coincidía en que ambos
+        # no traen N° de Control.
+        nc_ajuste_n = 0
+        nc_ajuste_feed = 0.0
+        nc_ajuste_smartiva = 0.0
         if wh_tracking:
             whs_finales = {w.id: w for w in WhIva.browse([t[0] for t in wh_tracking])}
             for wh_id, monto_feed in wh_tracking:
                 wh = whs_finales[wh_id]
+                if wh_id in nc_ajuste_wh_ids:
+                    nc_ajuste_n += 1
+                    nc_ajuste_feed += monto_feed
+                    nc_ajuste_smartiva += wh.monto_retenido
+                    continue
                 con_control = bool(wh.nro_control)
                 slot = tally[con_control][_bucket_de(wh)]
                 slot['n'] += 1
@@ -2574,8 +2600,9 @@ class VeConectaCargaVentas(models.Model):
             d = m_s - m_a
             return (_m(d) if abs(d) > 0.01 else 'cuadra'), ('#dc3545' if abs(d) > 0.01 else '#198754')
 
-        retenido_archivo_tot = con_control_feed + sin_control_feed + sin_ret_con_monto_archivo
-        retenido_smartiva_tot = con_control_smartiva + sin_control_smartiva
+        retenido_archivo_tot = (con_control_feed + sin_control_feed + nc_ajuste_feed
+                                 + sin_ret_con_monto_archivo)
+        retenido_smartiva_tot = con_control_smartiva + sin_control_smartiva + nc_ajuste_smartiva
         dif_tot_txt, dif_tot_color = _dif_o_cuadra(retenido_archivo_tot, retenido_smartiva_tot)
 
         filas_con_control = ''
@@ -2590,6 +2617,12 @@ class VeConectaCargaVentas(models.Model):
 
         dif_con_txt, dif_con_color = _dif_o_cuadra(con_control_feed, con_control_smartiva)
         dif_sin_txt, dif_sin_color = _dif_o_cuadra(sin_control_feed, sin_control_smartiva)
+        dif_nc_txt, dif_nc_color = _dif_o_cuadra(nc_ajuste_feed, nc_ajuste_smartiva)
+        fila_nc_ajuste = (
+            _fila2('Notas de Crédito — Ajuste (AJUSTE-NC-..., Caso B — factura ya declarada)',
+                   _n(nc_ajuste_n), _n(nc_ajuste_n), _m(nc_ajuste_feed), _m(nc_ajuste_smartiva),
+                   dif_nc_txt, color=dif_nc_color)
+            if nc_ajuste_n else '')
 
         tabla_2_retenciones = (
             f'<table style="border-collapse:collapse; font-size:0.85rem;">'
@@ -2603,6 +2636,7 @@ class VeConectaCargaVentas(models.Model):
             + _fila2('Sin N° de Control (forzada al 100%, regla legal SPE)',
                      _n(sin_control_n), _n(sin_control_n),
                      _m(sin_control_feed), _m(sin_control_smartiva), dif_sin_txt, color=dif_sin_color)
+            + fila_nc_ajuste
             + _fila2('Sin Retención Generada (archivo trae monto, SmartIVA no generó '
                      'retención — ver Tabla 1 por el motivo)',
                      _n(sin_ret_con_monto_n), _n(0), _m(sin_ret_con_monto_archivo), _m(0.0),
