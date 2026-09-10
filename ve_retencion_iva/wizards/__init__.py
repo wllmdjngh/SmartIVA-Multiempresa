@@ -17,3 +17,4 @@ from . import wizard_declarado_mensual
 from . import wizard_conciliacion_smartiva_seniat
 from . import wizard_conciliacion_libro_ventas
 from . import wizard_reporte_ejecutivo
+from . import wizard_calendario_seniat

@@ -273,15 +273,22 @@ class VeDeclaracionIva(models.Model):
     # Compute
     # ─────────────────────────────────────────────────────────────────────────
 
-    @api.depends('estado', 'fecha_fin')
+    @api.depends('estado', 'fecha_fin', 'fecha_inicio', 'company_id')
     def _compute_vencida(self):
         today = fields.Date.today()
+        Calendario = self.env['ve.calendario.seniat']
         for rec in self:
-            rec.vencida = (
-                rec.estado != 'presentada'
-                and bool(rec.fecha_fin)
-                and (rec.fecha_fin + timedelta(days=7)) < today
-            )
+            if not rec.fecha_fin or rec.estado == 'presentada':
+                rec.vencida = False
+                continue
+            # C1 (2026-09-10): fecha límite real del calendario SENIAT por
+            # último dígito de RIF/quincena/mes -- si todavía no se cargó el
+            # calendario de ese año, cae a la regla vieja (fecha_fin + 7
+            # días) como red de seguridad, nunca rompe.
+            limite = Calendario._fecha_limite_seniat(rec.company_id, rec.fecha_inicio)
+            if limite is None:
+                limite = rec.fecha_fin + timedelta(days=7)
+            rec.vencida = limite < today
 
     @api.depends('wh_iva_prov_ids.state', 'wh_iva_prov_ids.monto_retenido')
     def _compute_prov_summary(self):

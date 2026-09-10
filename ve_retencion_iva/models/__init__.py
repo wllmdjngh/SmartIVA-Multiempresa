@@ -14,3 +14,4 @@ from . import res_config_settings
 from . import whatsapp_hook
 from . import ve_conecta_carga_ventas
 from . import ve_conecta_carga_compras
+from . import ve_calendario_seniat

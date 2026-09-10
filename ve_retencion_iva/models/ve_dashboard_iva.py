@@ -486,16 +486,20 @@ class VeDashboardIva(models.Model):
             ('company_id', '=', self.env.company.id),
         ])
         total = len(todos)
-        # Declarados a tiempo (fecha_declaracion <= fecha_fin + 7 días)
-        # Sin fecha_vencimiento_rif oficial se usa fecha_fin + 7 como proxy
-        en_plazo = sum(
-            1 for p in todos
-            if p.estado == 'declarado'
-            and p.declaracion_iva_id
-            and p.declaracion_iva_id.fecha_declaracion
-            and p.fecha_fin
-            and p.declaracion_iva_id.fecha_declaracion.date() <= p.fecha_fin + timedelta(days=7)
-        )
+        # Declarados a tiempo -- fecha límite real del calendario SENIAT por
+        # último dígito de RIF/quincena/mes (C1, 2026-09-10); si ese año no
+        # tiene calendario cargado, cae a fecha_fin + 7 días como antes.
+        Calendario = self.env['ve.calendario.seniat']
+        en_plazo = 0
+        for p in todos:
+            if not (p.estado == 'declarado' and p.declaracion_iva_id
+                    and p.declaracion_iva_id.fecha_declaracion and p.fecha_fin):
+                continue
+            limite = Calendario._fecha_limite_seniat(p.company_id, p.fecha_inicio)
+            if limite is None:
+                limite = p.fecha_fin + timedelta(days=7)
+            if p.declaracion_iva_id.fecha_declaracion.date() <= limite:
+                en_plazo += 1
         pct = (en_plazo / total * 100) if total > 0 else 0.0
         return pct, en_plazo, total
 
@@ -1650,13 +1654,16 @@ class VeDashboardIva(models.Model):
 
     def _serie_valor_cumplimiento(self, periodo):
         decl = periodo.declaracion_iva_id
-        a_tiempo = (
-            periodo.estado == 'declarado'
-            and decl and decl.fecha_declaracion
-            and periodo.fecha_fin
-            and decl.fecha_declaracion.date() <= periodo.fecha_fin + timedelta(days=7)
-        )
-        return 100.0 if a_tiempo else 0.0
+        if not (periodo.estado == 'declarado' and decl and decl.fecha_declaracion
+                and periodo.fecha_fin):
+            return 0.0
+        # Misma fecha límite real del calendario SENIAT que
+        # _cumplimiento_en_rango (C1, 2026-09-10), con el mismo fallback.
+        limite = self.env['ve.calendario.seniat']._fecha_limite_seniat(
+            periodo.company_id, periodo.fecha_inicio)
+        if limite is None:
+            limite = periodo.fecha_fin + timedelta(days=7)
+        return 100.0 if decl.fecha_declaracion.date() <= limite else 0.0
 
     def _serie_label_corto(self, periodo_retencion):
         """'2026-05 2Q' → '05/2Q' — compacto para caber bajo 6 puntos en la tarjeta."""

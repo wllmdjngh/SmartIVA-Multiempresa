@@ -1,6 +1,6 @@
 {
     'name': 'Venezuela - Retenciones IVA',
-    'version': '19.0.2.14.213',
+    'version': '19.0.2.14.214',
     'category': 'Accounting/Localizations',
     'summary': 'Retenciones IVA Venezuela – DJCS',
     'description': '''
@@ -77,6 +77,7 @@ CONFIGURACIÓN REQUERIDA (ver README.md):
         'views/res_partner_views.xml',
         'views/ve_conecta_carga_ventas_views.xml',
         'views/ve_conecta_carga_compras_views.xml',
+        'views/ve_calendario_seniat_views.xml',
         'views/menu_views.xml',
     ],
     'assets': {

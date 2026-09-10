@@ -81,6 +81,19 @@
               sequence="18"
               groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
 
+    <menuitem id="DJCS_menu_calendario_seniat_cargar"
+              name="Cargar Calendario SENIAT"
+              parent="DJCS_menu_otros"
+              action="wizard_calendario_seniat_action"
+              sequence="19"
+              groups="ve_retencion_iva.group_ret_iva_gestor,account.group_account_manager"/>
+
+    <menuitem id="DJCS_menu_calendario_seniat_ver"
+              name="Calendario SENIAT"
+              parent="DJCS_menu_otros"
+              action="ve_calendario_seniat_action"
+              sequence="20"/>
+
     <menuitem id="DJCS_menu_iva_clientes_retenciones"
               name="Retenciones IVA Clientes"
               parent="DJCS_menu_iva_clientes"
