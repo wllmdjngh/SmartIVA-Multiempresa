@@ -160,7 +160,7 @@ class VeCalendarioSeniatPorEmpresa(models.Model):
                 SELECT
                     row_number() OVER (ORDER BY c.id, cal.anio DESC, q.quincena) AS id,
                     c.id AS company_id,
-                    c.vat AS rif,
+                    p.vat AS rif,
                     cal.anio AS anio,
                     q.quincena AS quincena,
                     MAX(CASE WHEN l.mes = 1  THEN l.dia_limite END) AS mes_01,
@@ -176,15 +176,16 @@ class VeCalendarioSeniatPorEmpresa(models.Model):
                     MAX(CASE WHEN l.mes = 11 THEN l.dia_limite END) AS mes_11,
                     MAX(CASE WHEN l.mes = 12 THEN l.dia_limite END) AS mes_12
                 FROM res_company c
+                JOIN res_partner p ON p.id = c.partner_id
                 CROSS JOIN (SELECT unnest(ARRAY['1Q', '2Q']) AS quincena) q
                 JOIN ve_calendario_seniat cal ON cal.estado = 'confirmado'
                 JOIN ve_calendario_seniat_linea l
                     ON l.calendario_id = cal.id
                    AND l.quincena = q.quincena
                    AND l.rif_digito = CAST(
-                       right(regexp_replace(c.vat, '\\D', '', 'g'), 1) AS integer)
-                WHERE c.vat IS NOT NULL
-                  AND regexp_replace(c.vat, '\\D', '', 'g') != ''
-                GROUP BY c.id, c.vat, cal.anio, q.quincena
+                       right(regexp_replace(p.vat, '\\D', '', 'g'), 1) AS integer)
+                WHERE p.vat IS NOT NULL
+                  AND regexp_replace(p.vat, '\\D', '', 'g') != ''
+                GROUP BY c.id, p.vat, cal.anio, q.quincena
             )
         """)
