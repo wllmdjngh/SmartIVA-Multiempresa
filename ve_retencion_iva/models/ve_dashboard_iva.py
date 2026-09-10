@@ -67,6 +67,13 @@ class VeDashboardIva(models.Model):
         compute='_compute_checklist', store=False)
     dias_cierre_quincena = fields.Integer(
         compute='_compute_checklist', store=False)
+    fecha_limite_seniat = fields.Date(
+        string='Fecha Límite SENIAT', compute='_compute_checklist', store=False,
+        help='Fecha real de vencimiento para declarar/pagar (Calendario '
+             'SENIAT por último dígito de RIF, C1) — distinta de "Días '
+             'para cierre de quincena" arriba, que es cuándo CIERRA el '
+             'período, no cuándo VENCE declararlo ante el SENIAT. Vacío si '
+             'no hay Calendario SENIAT cargado para ese año.')
     retenciones_ok = fields.Integer(
         compute='_compute_checklist', store=False)
     retenciones_total = fields.Integer(
@@ -551,6 +558,7 @@ class VeDashboardIva(models.Model):
             if not periodo:
                 rec.periodo_activo_name = 'Sin período activo'
                 rec.dias_cierre_quincena = -99
+                rec.fecha_limite_seniat = False
                 rec.retenciones_ok = 0
                 rec.retenciones_total = 0
                 rec.pct_retenciones_ok = 0.0
@@ -562,6 +570,8 @@ class VeDashboardIva(models.Model):
                 (periodo.fecha_fin - fields.Date.today()).days
                 if periodo.fecha_fin else -99
             )
+            rec.fecha_limite_seniat = self.env['ve.calendario.seniat']._fecha_limite_seniat(
+                rec.company_id, periodo.fecha_inicio)
             total = self.env['ve.wh.iva'].search_count([
                 ('conciliacion_id', '=', periodo.id),
             ])

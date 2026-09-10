@@ -67,6 +67,10 @@
                                                 <span invisible="dias_cierre_quincena &lt; -10"> d&#xed;as</span>
                                                 <span invisible="dias_cierre_quincena &gt;= -10"> —</span>
                                             </div>
+                                            <div class="small text-muted" invisible="not fecha_limite_seniat">
+                                                Vence SENIAT:
+                                                <field name="fecha_limite_seniat" readonly="1" nolabel="1"/>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

@@ -99,6 +99,9 @@ class WizardCalendarioSeniat(models.TransientModel):
             + ('' if n == 240 else f'\n\n⚠ Se esperaban 240 filas, se '
                f'extrajeron {n} — revise que no falte ninguna combinación '
                f'quincena/mes/dígito antes de confirmar.')
+            + (f'\n\n⚠ Una de las 2 llamadas OCR falló: {vals["_error_parcial"]} '
+               f'— complete a mano las filas de esa tabla.'
+               if vals.get('_error_parcial') else '')
         )
         return self._reabrir()
 
@@ -112,7 +115,16 @@ class WizardCalendarioSeniat(models.TransientModel):
         }
 
     def _extraer_con_claude_vision(self, archivo_b64):
-        """Devuelve (vals, error). vals=None si error."""
+        """Devuelve (vals, error). vals=None si error.
+
+        Bug real reportado 2026-09-10 (primera versión, una sola llamada
+        con las 2 tablas a la vez): la usuaria probó en vivo y tuvo que
+        corregir "muchos" dígitos -- una tabla de 240 celdas de una sola
+        pasada le da poco margen de atención por celda al modelo. Fix:
+        2 llamadas separadas, una por tabla (120 celdas c/u) -- mismo
+        criterio que "dividir para revisar mejor" ya usado en otras partes
+        del módulo. El encabezado (año/providencia/gaceta/fecha) se pide en
+        ambas llamadas por si alguna falla, se usa el primero que responda."""
         api_key = self.env['ir.config_parameter'].sudo().get_param(
             've_retencion_iva.anthropic_api_key', ''
         ).strip()
@@ -135,31 +147,64 @@ class WizardCalendarioSeniat(models.TransientModel):
                 'source': {'type': 'base64', 'media_type': media_type, 'data': b64_str},
             }
 
+        vals = {'anio': None, 'providencia': None, 'gaceta_oficial': None,
+                 'fecha_gaceta': None, 'tabla_a1': None, 'tabla_a2': None}
+        errores = []
+        for tabla_id, titulo in (
+            ('tabla_a1', 'a.1) Entre los días 01 al 15 de cada mes'),
+            ('tabla_a2', 'a.2) Entre los días 16 y el último de cada mes'),
+        ):
+            data, err = self._llamar_claude_tabla(content_block, api_key, tabla_id, titulo)
+            if err:
+                errores.append(f'{tabla_id}: {err}')
+                continue
+            for campo in ('anio', 'providencia', 'gaceta_oficial', 'fecha_gaceta'):
+                if not vals.get(campo) and data.get(campo):
+                    vals[campo] = data[campo]
+            vals[tabla_id] = data.get(tabla_id)
+
+        if not vals['tabla_a1'] and not vals['tabla_a2']:
+            return None, ' | '.join(errores) or 'Sin respuesta del OCR.'
+
+        raw_fecha = vals.get('fecha_gaceta')
+        if raw_fecha:
+            try:
+                d, m, y = str(raw_fecha).strip().split('/')
+                vals['fecha_gaceta'] = f'{y}-{int(m):02d}-{int(d):02d}'
+            except (ValueError, AttributeError):
+                vals['fecha_gaceta'] = None
+        if errores:
+            vals['_error_parcial'] = ' | '.join(errores)
+        return vals, None
+
+    def _llamar_claude_tabla(self, content_block, api_key, tabla_id, titulo):
+        """Una llamada a Claude Vision enfocada en UNA sola tabla (10 filas
+        x 12 columnas = 120 celdas) -- ver nota en _extraer_con_claude_vision
+        sobre por qué se separó de una sola llamada con las 2 tablas."""
         prompt = (
             'Este documento es una Providencia Administrativa del SENIAT '
             '(Venezuela) que establece el Calendario de Sujetos Pasivos '
             'Especiales y Agentes de Retención para un año fiscal. Trae 2 '
-            'tablas: "a.1) Entre los días 01 al 15 de cada mes" y '
-            '"a.2) Entre los días 16 y el último de cada mes" — cada una '
-            'con 10 filas (R.I.F 0 al 9, el último dígito del RIF) y 12 '
-            'columnas (ENE a DIC, el mes del período). Cada celda es el '
-            'día del mes (1-31) en que vence la obligación para ese dígito '
-            'de RIF ese mes.\n\n'
+            'tablas — SOLO necesito la tabla "' + titulo + '". Ignora la '
+            'otra tabla por completo.\n\n'
+            'Esa tabla tiene 10 filas (R.I.F 0 al 9, el último dígito del '
+            'RIF) y 12 columnas (ENE a DIC, el mes del período). Cada '
+            'celda es el día del mes (1-31, 1 o 2 dígitos) en que vence la '
+            'obligación para ese dígito de RIF ese mes.\n\n'
+            'Lee la tabla con mucho cuidado, fila por fila, columna por '
+            'columna, verificando cada dígito antes de escribirlo — es '
+            'data fiscal de vencimientos, la precisión importa más que la '
+            'velocidad.\n\n'
             'Responde ÚNICAMENTE con este JSON exacto (usa null si un dato '
-            'de encabezado no aparece; las tablas SIEMPRE deben traer las '
-            '10 filas × 12 columnas completas, sin omitir ninguna):\n'
+            'de encabezado no aparece en el documento; la tabla SIEMPRE '
+            'debe traer las 10 filas × 12 columnas completas):\n'
             '{\n'
             '  "anio": año calendario que rige este documento (número, ej 2026),\n'
             '  "providencia": "N° de Providencia, ej SNAT/2025/000091",\n'
             '  "gaceta_oficial": "N° de Gaceta Oficial, ej 470.331",\n'
             '  "fecha_gaceta": "fecha de la providencia/gaceta en formato DD/MM/YYYY",\n'
-            '  "tabla_a1": {\n'
-            '    "0": [12 números enteros, uno por mes ENE..DIC, fila R.I.F 0 de la tabla a.1],\n'
-            '    "1": [...], "2": [...], "3": [...], "4": [...], "5": [...],\n'
-            '    "6": [...], "7": [...], "8": [...], "9": [...]\n'
-            '  },\n'
-            '  "tabla_a2": {\n'
-            '    "0": [12 números enteros, uno por mes ENE..DIC, fila R.I.F 0 de la tabla a.2],\n'
+            f'  "{tabla_id}": {{\n'
+            '    "0": [12 números enteros, uno por mes ENE..DIC],\n'
             '    "1": [...], "2": [...], "3": [...], "4": [...], "5": [...],\n'
             '    "6": [...], "7": [...], "8": [...], "9": [...]\n'
             '  }\n'
@@ -169,7 +214,7 @@ class WizardCalendarioSeniat(models.TransientModel):
 
         payload = json.dumps({
             'model': 'claude-sonnet-4-6',
-            'max_tokens': 4096,
+            'max_tokens': 3072,
             'messages': [{'role': 'user', 'content': [
                 content_block, {'type': 'text', 'text': prompt},
             ]}],
@@ -209,21 +254,7 @@ class WizardCalendarioSeniat(models.TransientModel):
         except json.JSONDecodeError as e:
             return None, f'JSON inválido en respuesta: {e}'
 
-        vals = {
-            'anio': data.get('anio'),
-            'providencia': data.get('providencia'),
-            'gaceta_oficial': data.get('gaceta_oficial'),
-            'tabla_a1': data.get('tabla_a1'),
-            'tabla_a2': data.get('tabla_a2'),
-        }
-        raw_fecha = data.get('fecha_gaceta')
-        if raw_fecha:
-            try:
-                d, m, y = str(raw_fecha).strip().split('/')
-                vals['fecha_gaceta'] = f'{y}-{int(m):02d}-{int(d):02d}'
-            except (ValueError, AttributeError):
-                vals['fecha_gaceta'] = None
-        return vals, None
+        return data, None
 
     def action_confirmar(self):
         self.ensure_one()
