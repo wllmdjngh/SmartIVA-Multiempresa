@@ -41,10 +41,8 @@ class VeCalendarioSeniat(models.Model):
         've.calendario.seniat.linea', 'calendario_id', string='Días Límite')
     count_lineas = fields.Integer(compute='_compute_count_lineas')
 
-    _sql_constraints = [
-        ('anio_uniq', 'unique(anio)',
-         'Ya existe un calendario cargado para ese año.'),
-    ]
+    _anio_uniq = models.Constraint(
+        'unique(anio)', 'Ya existe un calendario cargado para ese año.')
 
     @api.depends('anio', 'providencia')
     def _compute_name(self):
@@ -118,7 +116,6 @@ class VeCalendarioSeniatLinea(models.Model):
     rif_digito = fields.Integer(string='Último Dígito RIF', required=True)
     dia_limite = fields.Integer(string='Día Límite', required=True)
 
-    _sql_constraints = [
-        ('linea_uniq', 'unique(calendario_id, quincena, mes, rif_digito)',
-         'Ya existe una fila para esa quincena/mes/dígito en este calendario.'),
-    ]
+    _linea_uniq = models.Constraint(
+        'unique(calendario_id, quincena, mes, rif_digito)',
+        'Ya existe una fila para esa quincena/mes/dígito en este calendario.')
