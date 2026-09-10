@@ -555,14 +555,31 @@ class WizardSubirComprobante(models.TransientModel):
             objetivo_ctrl = Periodo._norm_ctrl(wh.nro_control) if wh.nro_control else '0'
             factura_wh = wh.nro_documento or (wh.invoice_id.name if wh.invoice_id else '')
             objetivo_fact = Periodo._norm_factura(factura_wh) if factura_wh else '0'
+            # Bug real encontrado 2026-09-10 probando en vivo (Multiempresa,
+            # comprobante multilínea 2 facturas + 1 ND): el N° de Factura de
+            # una ND en Odoo ("ND-000900") arrastra los mismos dígitos que
+            # la factura afectada -- al normalizar, ambos dan "900". El loop
+            # anterior revisaba CADA línea por Control O Factura y se
+            # detenía en el primer match, así que encontró un match por
+            # Factura contra la línea de OTRA factura ANTES de llegar a la
+            # línea correcta de la ND (que sí matcheaba por Control). Fix:
+            # 2 pasadas, Control primero (identificador más confiable, ver
+            # comentario de _validar_coincidencia) sobre TODAS las líneas;
+            # Factura solo como respaldo si ninguna línea matcheó por
+            # Control.
             match = None
-            for linea in lineas:
-                ctrl = Periodo._norm_ctrl(str(linea.get('nro_control') or ''))
-                fact = Periodo._norm_factura(str(linea.get('nro_factura') or ''))
-                if ((objetivo_ctrl != '0' and ctrl == objetivo_ctrl)
-                        or (objetivo_fact != '0' and fact == objetivo_fact)):
-                    match = linea
-                    break
+            if objetivo_ctrl != '0':
+                for linea in lineas:
+                    ctrl = Periodo._norm_ctrl(str(linea.get('nro_control') or ''))
+                    if ctrl == objetivo_ctrl:
+                        match = linea
+                        break
+            if match is None and objetivo_fact != '0':
+                for linea in lineas:
+                    fact = Periodo._norm_factura(str(linea.get('nro_factura') or ''))
+                    if fact == objetivo_fact:
+                        match = linea
+                        break
             data = match or lineas[0]
             otras = [l for l in lineas if l is not data]
 

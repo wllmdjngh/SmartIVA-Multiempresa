@@ -331,6 +331,7 @@
                             <field name="doc_afectado" string="Doc. Afectado" optional="hide"/>
                             <field name="zona" optional="show"/>
                             <field name="es_spe" string="SPE" optional="show"/>
+                            <field name="tipo_cliente_archivo" string="Tipo Cliente (Archivo)" optional="hide"/>
                             <field name="validado_seniat" string="Validado SENIAT" optional="show"/>
                             <field name="partner_id" string="Cliente (match)"/>
                             <field name="brecha" widget="badge"

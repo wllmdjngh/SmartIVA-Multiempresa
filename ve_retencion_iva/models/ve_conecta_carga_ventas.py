@@ -422,6 +422,15 @@ _HEADER_MAP = {
     'contribuyente especial': 'es_spe', 'es contribuyente especial': 'es_spe',
     'agente de retencion': 'es_spe', 'es agente de retencion': 'es_spe',
     'spe': 'es_spe', 'contribuyente': 'es_spe',
+    # A3+A7 Paso 1 (2026-09-10) — columnas DISTINTAS de "contribuyente" de
+    # arriba (esa es la del RPA, S/N/E, ya funciona). Estas 2 son las que
+    # trae el propio Libro de Ventas del cliente: "Tipo de Contribuyente"
+    # (ESPECIAL/ORDINARIO, solo Cerro Azul) y "Tipo de Clientes" (PJ/PN/
+    # PG/PC, las otras 5 zonas) — van a un campo separado, nunca a es_spe.
+    'tipo de contribuyente': 'tipo_cliente_archivo',
+    'tipo contribuyente': 'tipo_cliente_archivo',
+    'tipo de cliente': 'tipo_cliente_archivo', 'tipo de clientes': 'tipo_cliente_archivo',
+    'tipo cliente': 'tipo_cliente_archivo', 'tipo clientes': 'tipo_cliente_archivo',
     # Validado SENIAT — opcional, si el cliente ya cruzó manualmente ese RIF
     # contra el portal SENIAT (independiente de la conciliación automática
     # de retenciones). Pedido explícito 2026-08-05: campo persistente en el
@@ -3183,6 +3192,15 @@ class VeConectaCargaVentasLinea(models.Model):
              'antes (si el cliente tiene monto retenido en cualquier fila '
              'del archivo). Confirma la condición de Agente de Retención '
              'sin depender del orden de las filas — ver action_confirmar.')
+    tipo_cliente_archivo = fields.Char(
+        string='Tipo de Cliente (Archivo)',
+        help='Opcional — captura tal cual "Tipo de Contribuyente" '
+             '(ESPECIAL/ORDINARIO, visto en Cerro Azul) o "Tipo de Clientes" '
+             '(PJ/PN/PG/PC, visto en las otras zonas). Solo informativo por '
+             'ahora — NUNCA alimenta es_spe, que sigue siendo la columna '
+             '"Contribuyente" (S/N/E) del RPA. A3+A7 Paso 1 (2026-09-10): '
+             'las preguntas sobre confiabilidad/relación con SPE quedan '
+             'diferidas a la sesión de análisis del proyecto.')
     validado_seniat = fields.Char(
         string='Validado SENIAT',
         help='Opcional — en blanco/Sí/No. Se sincroniza al campo homónimo '

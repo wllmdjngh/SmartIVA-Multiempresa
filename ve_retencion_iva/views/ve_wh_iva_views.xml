@@ -268,13 +268,17 @@
                     <div class="alert alert-danger"
                          invisible="state != 'anulado'"
                          role="alert">
-                        <strong>COMPROBANTE ANULADO</strong>
-                        — Anulado por
-                        <field name="anulado_por" readonly="1" nolabel="1"
-                               class="oe_inline"/>
-                        &#160;|&#160; Motivo:
-                        <field name="motivo_anulacion" readonly="1" nolabel="1"
-                               class="oe_inline"/>
+                        <div>
+                            <strong>COMPROBANTE ANULADO</strong>
+                            — Anulado por
+                            <field name="anulado_por" readonly="1" nolabel="1"
+                                   class="oe_inline"/>
+                        </div>
+                        <div>
+                            Motivo:
+                            <field name="motivo_anulacion" readonly="1" nolabel="1"
+                                   class="oe_inline" style="white-space:normal;"/>
+                        </div>
                     </div>
 
                     <!-- Banner fuera de plazo -->
