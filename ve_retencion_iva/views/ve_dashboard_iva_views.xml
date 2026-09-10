@@ -405,6 +405,20 @@
         <field name="arch" type="xml">
             <form string="Dashboard IVA — Gerencial" create="false" delete="false">
 
+                <field name="rango_fijo_activo" invisible="1"/>
+                <field name="rango_fijo_label" invisible="1"/>
+                <div class="alert alert-warning d-flex justify-content-between align-items-center mb-0"
+                     role="alert" invisible="not rango_fijo_activo">
+                    <span>
+                        <i class="fa fa-lock" title="Rango fijo"/>
+                        <strong>Vista de rango fijo</strong> —
+                        <field name="rango_fijo_label" readonly="1" nolabel="1"/>
+                        · no es el Dashboard en vivo, los números no se mueven con el tiempo.
+                    </span>
+                    <button name="%(action_open_dashboard_iva_gerencial)d" type="action"
+                            string="Volver al Dashboard en vivo" class="btn-link"/>
+                </div>
+
                 <div class="o_form_sheet_bg" style="background-color:#EAF1FB; max-width:100%; margin:0;">
                     <div class="o_form_sheet" style="max-width:100%;">
 
@@ -1026,10 +1040,17 @@
     </record>
 
     <record id="action_open_dashboard_iva_operativo_ene_jun_2026" model="ir.actions.server">
-        <field name="name">Dashboard IVA — Ene-Jun 2026 (rango fijo)</field>
+        <field name="name">Dashboard IVA — Operativo Ene-Jun 2026 (rango fijo)</field>
         <field name="model_id" ref="model_ve_dashboard_iva"/>
         <field name="state">code</field>
         <field name="code">action = model.action_open_dashboard_operativo_ene_jun_2026()</field>
+    </record>
+
+    <record id="action_open_dashboard_iva_gerencial_ene_jun_2026" model="ir.actions.server">
+        <field name="name">Dashboard IVA — Gerencial Ene-Jun 2026 (rango fijo)</field>
+        <field name="model_id" ref="model_ve_dashboard_iva"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_open_dashboard_gerencial_ene_jun_2026()</field>
     </record>
 
 </odoo>

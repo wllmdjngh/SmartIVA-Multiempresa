@@ -100,11 +100,17 @@
               action="ve_calendario_seniat_por_empresa_action"
               sequence="21"/>
 
-    <menuitem id="DJCS_menu_dashboard_ene_jun_2026"
-              name="Dashboard IVA — Ene-Jun 2026 (rango fijo)"
+    <menuitem id="DJCS_menu_dashboard_operativo_ene_jun_2026"
+              name="Dashboard IVA — Operativo Ene-Jun 2026 (rango fijo)"
               parent="DJCS_menu_otros"
               action="action_open_dashboard_iva_operativo_ene_jun_2026"
               sequence="22"/>
+
+    <menuitem id="DJCS_menu_dashboard_gerencial_ene_jun_2026"
+              name="Dashboard IVA — Gerencial Ene-Jun 2026 (rango fijo)"
+              parent="DJCS_menu_otros"
+              action="action_open_dashboard_iva_gerencial_ene_jun_2026"
+              sequence="23"/>
 
     <menuitem id="DJCS_menu_iva_clientes_retenciones"
               name="Retenciones IVA Clientes"

@@ -2945,6 +2945,28 @@ class VeDashboardIva(models.Model):
             'context': {'form_view_initial_mode': 'readonly'},
         }
 
+    @api.model
+    def action_open_dashboard_gerencial_ene_jun_2026(self):
+        """Mismo rango fijo que action_open_dashboard_operativo_ene_jun_2026
+        (ver ahí y _get_rango_ytd), pero sobre la vista Gerencial -- es
+        donde vive la gráfica de barras que la usuaria pidió comparar
+        contra lo ya reconciliado Ene-Jun 2026 con el cliente."""
+        dashboard = self._get_or_create_singleton()
+        view_id = self.env.ref('ve_retencion_iva.ve_dashboard_iva_view_form_gerencial').id
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Dashboard IVA — Gerencial (Ene-Jun 2026)',
+            'res_model': 've.dashboard.iva',
+            'res_id': dashboard.id,
+            'views': [(view_id, 'form')],
+            'target': 'current',
+            'context': {
+                'form_view_initial_mode': 'readonly',
+                've_rango_ytd_desde': '2026-01-01',
+                've_rango_ytd_hasta': '2026-06-30',
+            },
+        }
+
     # ── Drill-downs ───────────────────────────────────────────────────────────
     def _action_recordatorios_lista(self, name, domain):
         list_view_id = self.env.ref('ve_retencion_iva.ve_wh_iva_view_list_recordatorios').id
