@@ -73,6 +73,38 @@
         <field name="view_mode">list,form</field>
     </record>
 
+    <!-- ══ Calendario SENIAT por Empresa (vista SQL, solo lectura) ══════════ -->
+    <record id="ve_calendario_seniat_por_empresa_view_list" model="ir.ui.view">
+        <field name="name">ve.calendario.seniat.por.empresa.list</field>
+        <field name="model">ve.calendario.seniat.por.empresa</field>
+        <field name="arch" type="xml">
+            <list create="false" edit="false" delete="false">
+                <field name="company_id"/>
+                <field name="rif"/>
+                <field name="anio"/>
+                <field name="quincena"/>
+                <field name="mes_01"/>
+                <field name="mes_02"/>
+                <field name="mes_03"/>
+                <field name="mes_04"/>
+                <field name="mes_05"/>
+                <field name="mes_06"/>
+                <field name="mes_07"/>
+                <field name="mes_08"/>
+                <field name="mes_09"/>
+                <field name="mes_10"/>
+                <field name="mes_11"/>
+                <field name="mes_12"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="ve_calendario_seniat_por_empresa_action" model="ir.actions.act_window">
+        <field name="name">Calendario SENIAT por Empresa</field>
+        <field name="res_model">ve.calendario.seniat.por.empresa</field>
+        <field name="view_mode">list</field>
+    </record>
+
     <!-- ══ Wizard OCR de carga ══════════════════════════════════════════════ -->
     <record id="wizard_calendario_seniat_view_form" model="ir.ui.view">
         <field name="name">ve.calendario.seniat.wizard.form</field>

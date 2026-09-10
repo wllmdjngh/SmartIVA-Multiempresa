@@ -9,6 +9,17 @@ from odoo import api, fields, models
 
 N_PUNTOS_SERIE = 6
 
+_MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+             'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+
+def _fecha_larga_es(d):
+    """'19 de agosto de 2026' -- pedido explícito 2026-09-10: el widget de
+    fecha nativo abrevia el mes ('19 ago'), se necesita el nombre completo."""
+    if not d:
+        return ''
+    return f'{d.day} de {_MESES_ES[d.month - 1]} de {d.year}'
+
 
 class VeDashboardIva(models.Model):
     _name = 've.dashboard.iva'
@@ -66,14 +77,13 @@ class VeDashboardIva(models.Model):
     periodo_activo_name = fields.Char(
         compute='_compute_checklist', store=False)
     dias_cierre_quincena = fields.Integer(
-        compute='_compute_checklist', store=False)
-    fecha_limite_seniat = fields.Date(
-        string='Fecha Límite SENIAT', compute='_compute_checklist', store=False,
-        help='Fecha real de vencimiento para declarar/pagar (Calendario '
-             'SENIAT por último dígito de RIF, C1) — distinta de "Días '
-             'para cierre de quincena" arriba, que es cuándo CIERRA el '
-             'período, no cuándo VENCE declararlo ante el SENIAT. Vacío si '
-             'no hay Calendario SENIAT cargado para ese año.')
+        compute='_compute_checklist', store=False,
+        help='Días que faltan para la fecha límite real de declaración/pago '
+             'SENIAT (Calendario por RIF/quincena/mes, C1) — si ese año no '
+             'tiene calendario cargado, cae a fecha_fin + 7 días.')
+    fecha_cierre_quincena_texto = fields.Char(
+        string='Fecha Cierre de Quincena', compute='_compute_checklist', store=False,
+        help='Fecha límite real (Calendario SENIAT), en formato largo.')
     retenciones_ok = fields.Integer(
         compute='_compute_checklist', store=False)
     retenciones_total = fields.Integer(
@@ -558,7 +568,7 @@ class VeDashboardIva(models.Model):
             if not periodo:
                 rec.periodo_activo_name = 'Sin período activo'
                 rec.dias_cierre_quincena = -99
-                rec.fecha_limite_seniat = False
+                rec.fecha_cierre_quincena_texto = ''
                 rec.retenciones_ok = 0
                 rec.retenciones_total = 0
                 rec.pct_retenciones_ok = 0.0
@@ -566,12 +576,15 @@ class VeDashboardIva(models.Model):
                 continue
 
             rec.periodo_activo_name = periodo.periodo_retencion or periodo.name or '—'
-            rec.dias_cierre_quincena = (
-                (periodo.fecha_fin - fields.Date.today()).days
-                if periodo.fecha_fin else -99
-            )
-            rec.fecha_limite_seniat = self.env['ve.calendario.seniat']._fecha_limite_seniat(
+            # Fecha límite real (Calendario SENIAT por RIF/quincena/mes,
+            # C1); sin calendario cargado para ese año, cae a fecha_fin + 7
+            # días como el resto de los call sites (nunca rompe).
+            limite = self.env['ve.calendario.seniat']._fecha_limite_seniat(
                 rec.company_id, periodo.fecha_inicio)
+            if limite is None:
+                limite = (periodo.fecha_fin + timedelta(days=7)) if periodo.fecha_fin else False
+            rec.dias_cierre_quincena = (limite - fields.Date.today()).days if limite else -99
+            rec.fecha_cierre_quincena_texto = _fecha_larga_es(limite) if limite else '—'
             total = self.env['ve.wh.iva'].search_count([
                 ('conciliacion_id', '=', periodo.id),
             ])

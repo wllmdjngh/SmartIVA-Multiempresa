@@ -9,7 +9,7 @@ real varía por corrimiento de fines de semana/feriados, no es un offset fijo.
 Dato GLOBAL, no por compañía -- una sola carga anual sirve para TODAS las
 compañías de una base multiempresa, cada una consulta con su propio RIF."""
 
-from odoo import api, fields, models
+from odoo import api, fields, models, tools
 from odoo.exceptions import UserError
 
 
@@ -119,3 +119,72 @@ class VeCalendarioSeniatLinea(models.Model):
     _linea_uniq = models.Constraint(
         'unique(calendario_id, quincena, mes, rif_digito)',
         'Ya existe una fila para esa quincena/mes/dígito en este calendario.')
+
+
+class VeCalendarioSeniatPorEmpresa(models.Model):
+    """Vista SQL de solo lectura -- pedido explícito 2026-09-10: ver el
+    calendario ya resuelto por compañía (RIF real, no dígito suelto), con
+    una fila por Empresa+Quincena y una columna por mes (Ene..Dic). Siempre
+    refleja el calendario CONFIRMADO más reciente que tenga esa
+    combinación -- no hay que sincronizar nada, es un JOIN en vivo contra
+    res.company + ve.calendario.seniat.linea."""
+    _name = 've.calendario.seniat.por.empresa'
+    _description = 'Calendario SENIAT por Empresa'
+    _auto = False
+    _order = 'company_id, anio desc, quincena'
+
+    company_id = fields.Many2one('res.company', string='Empresa', readonly=True)
+    rif = fields.Char(string='RIF', readonly=True)
+    anio = fields.Integer(string='Año', readonly=True)
+    quincena = fields.Selection([
+        ('1Q', 'Entre 01 y 15'),
+        ('2Q', 'Entre 16 y fin de mes'),
+    ], readonly=True)
+    mes_01 = fields.Integer(string='Ene', readonly=True)
+    mes_02 = fields.Integer(string='Feb', readonly=True)
+    mes_03 = fields.Integer(string='Mar', readonly=True)
+    mes_04 = fields.Integer(string='Abr', readonly=True)
+    mes_05 = fields.Integer(string='May', readonly=True)
+    mes_06 = fields.Integer(string='Jun', readonly=True)
+    mes_07 = fields.Integer(string='Jul', readonly=True)
+    mes_08 = fields.Integer(string='Ago', readonly=True)
+    mes_09 = fields.Integer(string='Sep', readonly=True)
+    mes_10 = fields.Integer(string='Oct', readonly=True)
+    mes_11 = fields.Integer(string='Nov', readonly=True)
+    mes_12 = fields.Integer(string='Dic', readonly=True)
+
+    def init(self):
+        tools.drop_view_if_exists(self.env.cr, self._table)
+        self.env.cr.execute(f"""
+            CREATE VIEW {self._table} AS (
+                SELECT
+                    row_number() OVER (ORDER BY c.id, cal.anio DESC, q.quincena) AS id,
+                    c.id AS company_id,
+                    c.vat AS rif,
+                    cal.anio AS anio,
+                    q.quincena AS quincena,
+                    MAX(CASE WHEN l.mes = 1  THEN l.dia_limite END) AS mes_01,
+                    MAX(CASE WHEN l.mes = 2  THEN l.dia_limite END) AS mes_02,
+                    MAX(CASE WHEN l.mes = 3  THEN l.dia_limite END) AS mes_03,
+                    MAX(CASE WHEN l.mes = 4  THEN l.dia_limite END) AS mes_04,
+                    MAX(CASE WHEN l.mes = 5  THEN l.dia_limite END) AS mes_05,
+                    MAX(CASE WHEN l.mes = 6  THEN l.dia_limite END) AS mes_06,
+                    MAX(CASE WHEN l.mes = 7  THEN l.dia_limite END) AS mes_07,
+                    MAX(CASE WHEN l.mes = 8  THEN l.dia_limite END) AS mes_08,
+                    MAX(CASE WHEN l.mes = 9  THEN l.dia_limite END) AS mes_09,
+                    MAX(CASE WHEN l.mes = 10 THEN l.dia_limite END) AS mes_10,
+                    MAX(CASE WHEN l.mes = 11 THEN l.dia_limite END) AS mes_11,
+                    MAX(CASE WHEN l.mes = 12 THEN l.dia_limite END) AS mes_12
+                FROM res_company c
+                CROSS JOIN (SELECT unnest(ARRAY['1Q', '2Q']) AS quincena) q
+                JOIN ve_calendario_seniat cal ON cal.estado = 'confirmado'
+                JOIN ve_calendario_seniat_linea l
+                    ON l.calendario_id = cal.id
+                   AND l.quincena = q.quincena
+                   AND l.rif_digito = CAST(
+                       right(regexp_replace(c.vat, '\\D', '', 'g'), 1) AS integer)
+                WHERE c.vat IS NOT NULL
+                  AND regexp_replace(c.vat, '\\D', '', 'g') != ''
+                GROUP BY c.id, c.vat, cal.anio, q.quincena
+            )
+        """)

@@ -61,15 +61,14 @@
                                         <span class="badge text-bg-danger" style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; padding:0; flex:none;"
                                               invisible="dias_cierre_quincena &gt;= 0">&#x2717;</span>
                                         <div>
-                                            <div class="small text-muted">D&#xed;as para cierre de quincena</div>
                                             <div class="fw-bold">
-                                                <field name="dias_cierre_quincena" readonly="1" nolabel="1"/>
-                                                <span invisible="dias_cierre_quincena &lt; -10"> d&#xed;as</span>
-                                                <span invisible="dias_cierre_quincena &gt;= -10"> —</span>
+                                                <field name="fecha_cierre_quincena_texto" readonly="1" nolabel="1"/>
                                             </div>
-                                            <div class="small text-muted" invisible="not fecha_limite_seniat">
-                                                Vence SENIAT:
-                                                <field name="fecha_limite_seniat" readonly="1" nolabel="1"/>
+                                            <div class="small text-muted">
+                                                <span invisible="dias_cierre_quincena &lt; -10">
+                                                    Faltan <field name="dias_cierre_quincena" readonly="1" nolabel="1"/> d&#xed;as
+                                                </span>
+                                                <span invisible="dias_cierre_quincena &gt;= -10">—</span>
                                             </div>
                                         </div>
                                     </div>
