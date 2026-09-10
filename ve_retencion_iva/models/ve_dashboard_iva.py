@@ -50,6 +50,29 @@ class VeDashboardIva(models.Model):
     company_id = fields.Many2one(
         'res.company', compute='_compute_company_id', store=False)
 
+    # ── Rango fijo por contexto (ver _get_rango_ytd) ─────────────────────────
+    rango_fijo_activo = fields.Boolean(
+        compute='_compute_rango_fijo', store=False,
+        help='True si esta vista del Dashboard está mostrando un rango fijo '
+             '(por contexto), no el YTD dinámico normal.')
+    rango_fijo_label = fields.Char(compute='_compute_rango_fijo', store=False)
+
+    def _compute_rango_fijo(self):
+        desde = self.env.context.get('ve_rango_ytd_desde')
+        hasta = self.env.context.get('ve_rango_ytd_hasta')
+        activo = bool(desde and hasta)
+        label = ''
+        if activo:
+            try:
+                d = fields.Date.from_string(desde)
+                h = fields.Date.from_string(hasta)
+                label = f'{d.strftime("%d/%m/%Y")} — {h.strftime("%d/%m/%Y")}'
+            except (ValueError, TypeError):
+                activo = False
+        for rec in self:
+            rec.rango_fijo_activo = activo
+            rec.rango_fijo_label = label
+
     def _compute_company_id(self):
         for rec in self:
             rec.company_id = self.env.company
@@ -498,6 +521,21 @@ class VeDashboardIva(models.Model):
         # resuelve) y dejó de sincronizarse -- no hay ya ningún cliente
         # activo que dependa del rango fijo, así que se revierte al
         # cálculo dinámico real: 1 de enero del año en curso hasta hoy.
+        #
+        # 2026-09-10 -- recuperado como override por CONTEXTO (no un campo
+        # guardado): ve.dashboard.iva es un singleton GLOBAL (un solo
+        # registro para toda la base, ver _get_or_create_singleton) -- un
+        # campo guardado cambiaría lo que ve TODO el mundo a la vez,
+        # cualquier compañía, mientras alguien esté mirando el rango fijo.
+        # El contexto es por request/acción, no pisa nada para nadie más.
+        # Ver action_open_dashboard_operativo_periodo_fijo.
+        desde = self.env.context.get('ve_rango_ytd_desde')
+        hasta = self.env.context.get('ve_rango_ytd_hasta')
+        if desde and hasta:
+            try:
+                return fields.Date.from_string(desde), fields.Date.from_string(hasta)
+            except (ValueError, TypeError):
+                pass
         hoy = fields.Date.today()
         return hoy.replace(month=1, day=1), hoy
 
@@ -2869,6 +2907,28 @@ class VeDashboardIva(models.Model):
             'views': [(view_id, 'form')],
             'target': 'current',
             'context': {'form_view_initial_mode': 'readonly'},
+        }
+
+    @api.model
+    def action_open_dashboard_operativo_ene_jun_2026(self):
+        """Vista de rango fijo Ene-Jun 2026 -- pedido explícito 2026-09-10:
+        recuperar la comparación puntual que se le mostró al cliente antes
+        de volver el Dashboard a YTD dinámico (2026-08-27), sin volver a
+        romper el comportamiento por defecto para nadie. Ver _get_rango_ytd."""
+        dashboard = self._get_or_create_singleton()
+        view_id = self.env.ref('ve_retencion_iva.ve_dashboard_iva_view_form_operativo').id
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'Dashboard IVA — Operativo (Ene-Jun 2026)',
+            'res_model': 've.dashboard.iva',
+            'res_id': dashboard.id,
+            'views': [(view_id, 'form')],
+            'target': 'current',
+            'context': {
+                'form_view_initial_mode': 'readonly',
+                've_rango_ytd_desde': '2026-01-01',
+                've_rango_ytd_hasta': '2026-06-30',
+            },
         }
 
     @api.model
