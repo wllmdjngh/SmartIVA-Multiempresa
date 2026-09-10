@@ -62,13 +62,11 @@
                                               invisible="dias_cierre_quincena &gt;= 0">&#x2717;</span>
                                         <div>
                                             <div class="fw-bold">
+                                                Fecha cierre quincena :
                                                 <field name="fecha_cierre_quincena_texto" readonly="1" nolabel="1"/>
                                             </div>
                                             <div class="small text-muted">
-                                                <span invisible="dias_cierre_quincena &lt; -10">
-                                                    Faltan <field name="dias_cierre_quincena" readonly="1" nolabel="1"/> d&#xed;as
-                                                </span>
-                                                <span invisible="dias_cierre_quincena &gt;= -10">—</span>
+                                                <field name="dias_cierre_quincena_texto" readonly="1" nolabel="1"/>
                                             </div>
                                         </div>
                                     </div>

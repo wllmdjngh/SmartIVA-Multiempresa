@@ -83,6 +83,17 @@
         <field name="domain_force">['|', ('conciliacion_id', '=', False), ('conciliacion_id.company_id', 'in', company_ids)]</field>
     </record>
 
+    <record id="ve_calendario_seniat_por_empresa_company_rule" model="ir.rule">
+        <field name="name">ve.calendario.seniat.por.empresa: multi-compañía</field>
+        <field name="model_id" ref="model_ve_calendario_seniat_por_empresa"/>
+        <!-- Pedido explícito 2026-09-10: por defecto que muestre la(s)
+             compañía(s) activa(s) de la sesión, igual que el resto del
+             módulo — el calendario en sí (ve.calendario.seniat) sigue
+             siendo dato global sin ir.rule, esta regla es solo sobre la
+             vista ya resuelta por empresa. -->
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
     <!-- Gap real encontrado 2026-08-26 (Multiempresa, Purolomo): estos 4
          modelos de CONECTA-14 (wizard de carga Ventas/Compras) se
          construyeron DESPUÉS del esfuerzo original de MULTI-01 y nunca

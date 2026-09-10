@@ -99,10 +99,25 @@
         </field>
     </record>
 
+    <record id="ve_calendario_seniat_por_empresa_view_search" model="ir.ui.view">
+        <field name="name">ve.calendario.seniat.por.empresa.search</field>
+        <field name="model">ve.calendario.seniat.por.empresa</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="company_id"/>
+                <field name="rif"/>
+                <field name="anio"/>
+                <filter string="Empresa" name="group_empresa" context="{'group_by': 'company_id'}"/>
+                <filter string="Año" name="group_anio" context="{'group_by': 'anio'}"/>
+            </search>
+        </field>
+    </record>
+
     <record id="ve_calendario_seniat_por_empresa_action" model="ir.actions.act_window">
         <field name="name">Calendario SENIAT por Empresa</field>
         <field name="res_model">ve.calendario.seniat.por.empresa</field>
         <field name="view_mode">list</field>
+        <field name="search_view_id" ref="ve_calendario_seniat_por_empresa_view_search"/>
     </record>
 
     <!-- ══ Wizard OCR de carga ══════════════════════════════════════════════ -->

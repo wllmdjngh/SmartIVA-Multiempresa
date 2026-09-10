@@ -84,6 +84,11 @@ class VeDashboardIva(models.Model):
     fecha_cierre_quincena_texto = fields.Char(
         string='Fecha Cierre de Quincena', compute='_compute_checklist', store=False,
         help='Fecha límite real (Calendario SENIAT), en formato largo.')
+    dias_cierre_quincena_texto = fields.Char(
+        compute='_compute_checklist', store=False,
+        help='"Faltan X días" / "Venció hace X días" — siempre muestra el '
+             'conteo real, incluso muy vencido (pedido explícito 2026-09-10, '
+             'antes se ocultaba pasados 10 días de atraso).')
     retenciones_ok = fields.Integer(
         compute='_compute_checklist', store=False)
     retenciones_total = fields.Integer(
@@ -569,6 +574,7 @@ class VeDashboardIva(models.Model):
                 rec.periodo_activo_name = 'Sin período activo'
                 rec.dias_cierre_quincena = -99
                 rec.fecha_cierre_quincena_texto = ''
+                rec.dias_cierre_quincena_texto = '—'
                 rec.retenciones_ok = 0
                 rec.retenciones_total = 0
                 rec.pct_retenciones_ok = 0.0
@@ -583,8 +589,15 @@ class VeDashboardIva(models.Model):
                 rec.company_id, periodo.fecha_inicio)
             if limite is None:
                 limite = (periodo.fecha_fin + timedelta(days=7)) if periodo.fecha_fin else False
-            rec.dias_cierre_quincena = (limite - fields.Date.today()).days if limite else -99
+            dias = (limite - fields.Date.today()).days if limite else -99
+            rec.dias_cierre_quincena = dias
             rec.fecha_cierre_quincena_texto = _fecha_larga_es(limite) if limite else '—'
+            if not limite:
+                rec.dias_cierre_quincena_texto = '—'
+            elif dias >= 0:
+                rec.dias_cierre_quincena_texto = f'Faltan {dias} días'
+            else:
+                rec.dias_cierre_quincena_texto = f'Venció hace {-dias} días'
             total = self.env['ve.wh.iva'].search_count([
                 ('conciliacion_id', '=', periodo.id),
             ])
