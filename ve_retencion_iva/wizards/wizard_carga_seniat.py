@@ -465,9 +465,21 @@ class WizardCargaSeniat(models.TransientModel):
         # arriba: antes solo se borraba conciliacion_id == período actual,
         # dejando basura mezclada con lo recién importado si ya existían
         # filas de la OTRA quincena del mismo mes).
+        #
+        # NUNCA borrar lo que ya está 'conciliado' -- bug real confirmado
+        # 2026-09-16 (Vencement, Febrero): recargar el mismo XLSX del mes
+        # (pasó 3 veces en un día) borraba también las filas SENIAT ya
+        # conciliadas, dejando al wh.iva del otro lado "casado" con una
+        # fila que ya no existe -- _do_conciliar la tiene protegida
+        # (congelada) para no reevaluarla, así que nunca vuelve a
+        # encontrar pareja y queda huérfana como "Solo SENIAT" para
+        # siempre. La protección de _do_conciliar no sirve de nada si acá
+        # se borra por debajo -- este es el punto real donde hay que
+        # cortar el problema, no en la reconciliación.
         existentes = self.env['ve.seniat.retencion'].search([
             ('periodo', '=', self.conciliacion_id.periodo),
             ('company_id', '=', company.id),
+            ('estado', '!=', 'conciliado'),
         ])
         eliminados = len(existentes)
         if existentes:
