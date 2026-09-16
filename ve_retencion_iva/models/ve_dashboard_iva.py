@@ -1185,6 +1185,19 @@ class VeDashboardIva(models.Model):
         r = w / 2 - 10
         cx, cy = w / 2, w / 2 - 2
         h = int(cy + 14)
+        # Margen superior del viewBox (2026-09-16, bug real reportado en
+        # vivo -- "IMPACTO PERIODO"/"IMPACTO YTD" con texto montado encima
+        # del título): la etiqueta de monto junto a la aguja se dibuja a
+        # radio r+16 desde el centro (cy). Cuando el % hace que la aguja
+        # apunte casi vertical (sin(ang)~1), y = cy - (r+16) puede quedar
+        # NEGATIVO (matemáticamente siempre -8, sin importar w, porque
+        # cy-r=8 y el offset es 16) -- con overflow:visible ese texto se
+        # sale por ARRIBA del propio <svg>, y como el navegador solo
+        # reserva el alto `h` para el elemento, se monta sobre el título
+        # ("Impacto Período"/"Impacto YTD") que vive justo encima en el
+        # HTML. Se agranda el viewBox y el alto real hacia arriba para que
+        # el navegador reserve el espacio real que ocupa la etiqueta.
+        margen_sup = 16
 
         def punto(valor, radio):
             ang = math.pi * (1 - max(0.0, min(valor, tope)) / tope)
@@ -1243,7 +1256,8 @@ class VeDashboardIva(models.Model):
 
         gauge_svg = (
             '<div style="text-align:center;">'
-            f'<svg viewBox="0 0 {w} {h}" style="width:{w}px; height:{h}px; overflow:visible;">'
+            f'<svg viewBox="0 -{margen_sup} {w} {h + margen_sup}" '
+            f'style="width:{w}px; height:{h + margen_sup}px; overflow:visible;">'
             f'{bandas}{aguja}{etiqueta_riesgo}'
             '</svg>'
             f'<div class="fw-bold small" style="color:{color_txt}; margin-top:-4px;">'
@@ -2673,7 +2687,7 @@ class VeDashboardIva(models.Model):
         if company.ve_declarado_manual:
             Declarado = self.env['ve.declarado.mensual']
             recs_decl = Declarado.search([
-                ('company_id', '=', company.id), ('anio', '=', ANIO), ('mes', '<=', 6),
+                ('company_id', '=', company.id), ('anio', '=', year_start.year), ('mes', '<=', 6),
             ])
             declarado = round(sum(recs_decl.mapped('monto_declarado')), 2)
         else:

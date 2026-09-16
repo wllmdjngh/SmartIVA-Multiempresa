@@ -28,11 +28,16 @@ def _norm_rif(rif):
 def _formatear_rif(rif):
     """Mismo criterio que ve_conecta_carga_ventas.py::_formatear_rif (ver
     ese archivo para el detalle) -- RIF sin guión (letra + 9 dígitos) se
-    formatea a LETRA-12345678-9. Pedido explícito 2026-08-05."""
+    formatea a LETRA-12345678-9. Pedido explícito 2026-08-05. Corregido
+    2026-09-15 para también reformatear un RIF con guión a medias (ej.
+    'J-306385010', falta el segundo guión) -- se limpian los guiones/
+    espacios existentes antes de aplicar el patrón, en vez de asumir que
+    cualquier guión ya presente significa "bien formateado"."""
     limpio = (rif or '').upper().strip()
-    if not limpio or '-' in limpio:
+    if not limpio:
         return limpio
-    m = re.match(r'^([VEJPG])(\d{9})$', limpio)
+    sin_guion = limpio.replace('-', '').replace(' ', '')
+    m = re.match(r'^([VEJPG])(\d{9})$', sin_guion)
     if not m:
         return limpio
     letra, digitos = m.groups()
@@ -633,7 +638,11 @@ class VeConectaCargaCompras(models.Model):
                 # otras compañías al navegar a sus documentos.
                 vals_partner = {
                     'name': linea.nombre_proveedor or linea.rif,
-                    'vat': linea.rif,
+                    # _formatear_rif() en vez del valor crudo -- mismo fix
+                    # 2026-09-15 que ve_conecta_carga_ventas.py, ver ese
+                    # archivo para el detalle (RIF con guión a medias
+                    # quedaba mal guardado desde la creación del partner).
+                    'vat': _formatear_rif(linea.rif) if linea.rif else linea.rif,
                     'company_type': 'company',
                     'company_id': self.company_id.id,
                     'supplier_rank': 1,

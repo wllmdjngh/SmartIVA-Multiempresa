@@ -45,7 +45,7 @@
                 <filter name="cargado" string="Cargado" domain="[('estado','=','cargado')]"/>
                 <filter name="conciliado" string="Conciliado" domain="[('estado','=','conciliado')]"/>
                 <filter name="diferencia" string="Diferencia" domain="[('estado','=','diferencia')]"/>
-                <filter name="sin_match" string="Sin Match" domain="[('estado','=','sin_match')]"/>
+                <filter name="sin_match" string="Solo SENIAT" domain="[('estado','=','sin_match')]"/>
                 <separator/>
                 <!-- Sin context de group_by acá a propósito: el validador de
                      vista de esta versión de Odoo exige que "group_by" en el

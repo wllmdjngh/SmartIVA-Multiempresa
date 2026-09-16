@@ -1,6 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
+    <!-- Server actions que abren cada dashboard — deben ir ANTES de las vistas
+         que las referencian via %(xmlid)d (botón "Volver al Dashboard en vivo"),
+         si no un fresh install falla con "External ID not found in the system"
+         (en upgrades no se nota porque el xmlid ya existe de una versión previa). -->
+    <record id="action_open_dashboard_iva_operativo" model="ir.actions.server">
+        <field name="name">Dashboard IVA — Operativo</field>
+        <field name="model_id" ref="model_ve_dashboard_iva"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_open_dashboard_operativo()</field>
+    </record>
+
+    <record id="action_open_dashboard_iva_gerencial" model="ir.actions.server">
+        <field name="name">Dashboard IVA — Gerencial</field>
+        <field name="model_id" ref="model_ve_dashboard_iva"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_open_dashboard_gerencial()</field>
+    </record>
+
+    <record id="action_open_dashboard_iva_operativo_ene_jun_2026" model="ir.actions.server">
+        <field name="name">Dashboard IVA — Operativo Ene-Jun 2026 (rango fijo)</field>
+        <field name="model_id" ref="model_ve_dashboard_iva"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_open_dashboard_operativo_ene_jun_2026()</field>
+    </record>
+
+    <record id="action_open_dashboard_iva_gerencial_ene_jun_2026" model="ir.actions.server">
+        <field name="name">Dashboard IVA — Gerencial Ene-Jun 2026 (rango fijo)</field>
+        <field name="model_id" ref="model_ve_dashboard_iva"/>
+        <field name="state">code</field>
+        <field name="code">action = model.action_open_dashboard_gerencial_ene_jun_2026()</field>
+    </record>
+
     <!-- ══════════════════════════════════════════════════════════════════
          DASHBOARD OPERATIVO — Semáforo, Cobranza vs. Comprobante,
          Antigüedad de Comprobantes Vencidos, Top Clientes.
@@ -1022,35 +1054,6 @@
 
             </form>
         </field>
-    </record>
-
-    <!-- Server actions que abren cada dashboard -->
-    <record id="action_open_dashboard_iva_operativo" model="ir.actions.server">
-        <field name="name">Dashboard IVA — Operativo</field>
-        <field name="model_id" ref="model_ve_dashboard_iva"/>
-        <field name="state">code</field>
-        <field name="code">action = model.action_open_dashboard_operativo()</field>
-    </record>
-
-    <record id="action_open_dashboard_iva_gerencial" model="ir.actions.server">
-        <field name="name">Dashboard IVA — Gerencial</field>
-        <field name="model_id" ref="model_ve_dashboard_iva"/>
-        <field name="state">code</field>
-        <field name="code">action = model.action_open_dashboard_gerencial()</field>
-    </record>
-
-    <record id="action_open_dashboard_iva_operativo_ene_jun_2026" model="ir.actions.server">
-        <field name="name">Dashboard IVA — Operativo Ene-Jun 2026 (rango fijo)</field>
-        <field name="model_id" ref="model_ve_dashboard_iva"/>
-        <field name="state">code</field>
-        <field name="code">action = model.action_open_dashboard_operativo_ene_jun_2026()</field>
-    </record>
-
-    <record id="action_open_dashboard_iva_gerencial_ene_jun_2026" model="ir.actions.server">
-        <field name="name">Dashboard IVA — Gerencial Ene-Jun 2026 (rango fijo)</field>
-        <field name="model_id" ref="model_ve_dashboard_iva"/>
-        <field name="state">code</field>
-        <field name="code">action = model.action_open_dashboard_gerencial_ene_jun_2026()</field>
     </record>
 
 </odoo>

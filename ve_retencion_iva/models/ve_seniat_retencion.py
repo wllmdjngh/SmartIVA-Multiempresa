@@ -39,7 +39,7 @@ class VeSeniatRetencion(models.Model):
         ('cargado',    'Por Conciliar'),
         ('conciliado', 'Conciliado'),
         ('diferencia', 'Con Diferencia'),
-        ('sin_match',  'Sin Coincidencia'),
+        ('sin_match',  'Solo SENIAT'),
     ], string='Estado Conciliación', default='cargado')
 
     wh_iva_id = fields.Many2one('ve.wh.iva', string='Retención Odoo Vinculada', ondelete='set null')
@@ -214,6 +214,66 @@ class VeSeniatRetencion(models.Model):
             if not vals.get('periodo_retencion') and vals.get('periodo'):
                 vals['periodo_retencion'] = self._calc_pr(
                     vals['periodo'], vals.get('fecha'))
+
+        # Deduplicación 2026-09-16 (pedido explícito) -- evitar crear una
+        # fila IDÉNTICA a una que ya existe (mismo RIF + N.Control
+        # normalizado, o RIF + N.Factura normalizado si no hay N.Control,
+        # + Monto exacto), sin importar en qué estado esté la existente.
+        # Bug real encontrado en vivo (Vencement, Febrero): volver a
+        # extraer/cargar SENIAT para un período YA conciliado creaba una
+        # fila duplicada que competía con la original -- si la original
+        # ya estaba 'conciliado' (retención Odoo ya avanzada/congelada
+        # por _do_conciliar, ver ese método), la duplicada quedaba
+        # huérfana para siempre; si estaba en 'diferencia' (no
+        # congelada), 2 candidatos idénticos hacían que el matching se
+        # rindiera (ambiguo) y la retención RETROCEDIERA a 'solo_odoo'
+        # -- peor que como estaba. La clave usa N.Control/N.Factura, NO
+        # solo RIF+Monto -- un cruce real encontró 314 casos de mismo
+        # RIF+Monto con N.Control distinto (transacciones reales
+        # distintas, monto igual por casualidad), que NO deben tratarse
+        # como duplicado. Cualquier dato que difiera (sobre todo el
+        # monto, señal de un ajuste real) se deja crear -- no es un
+        # duplicado, es información nueva que debe competir en el
+        # matching normal.
+        Conc = self.env['ve.conciliacion.periodo']
+        norm_rif = Conc._norm_rif
+        norm_ctrl = Conc._norm_ctrl
+        norm_factura = Conc._norm_factura
+
+        rifs = {v.get('rif_agente') for v in vals_list if v.get('rif_agente')}
+        indice = {}
+        if rifs:
+            existentes = self.sudo().search([('rif_agente', 'in', list(rifs))])
+            for e in existentes:
+                rn = norm_rif(e.rif_agente)
+                monto = round(e.monto_retenido, 2)
+                if e.nro_control:
+                    indice.setdefault((rn, 'ctrl', norm_ctrl(e.nro_control)), set()).add(monto)
+                if e.nro_documento:
+                    indice.setdefault((rn, 'fact', norm_factura(e.nro_documento)), set()).add(monto)
+
+        vals_finales = []
+        omitidas = 0
+        for vals in vals_list:
+            rn = norm_rif(vals.get('rif_agente'))
+            cn = norm_ctrl(vals.get('nro_control')) if vals.get('nro_control') else False
+            fn = norm_factura(vals.get('nro_documento')) if vals.get('nro_documento') else False
+            monto = round(vals.get('monto_retenido') or 0.0, 2)
+            clave = (rn, 'ctrl', cn) if cn else ((rn, 'fact', fn) if fn else None)
+            if clave and monto in indice.get(clave, ()):
+                omitidas += 1
+                continue
+            vals_finales.append(vals)
+
+        if omitidas:
+            _logger.info(
+                've_seniat_retencion.create: %d fila(s) omitida(s) por ser '
+                'duplicado exacto de una ya existente (mismo RIF+Control/'
+                'Factura+Monto)', omitidas)
+        vals_list = vals_finales
+        if not vals_list:
+            return self.browse()
+
         records = super().create(vals_list)
         # Vincular a conciliación por periodo_retencion cuando no viene explícita
         for rec in records:

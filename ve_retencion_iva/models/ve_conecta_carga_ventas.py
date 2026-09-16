@@ -43,14 +43,26 @@ def _codigo_diario_zona(zona):
 def _formatear_rif(rif):
     """Acepta un RIF sin guión (ej. 'J411947830', formato común en
     exportes de terceros) y lo devuelve con el formato estándar
-    LETRA-12345678-9. Si ya trae guión, o si su forma no coincide con el
-    patrón esperado (letra + 9 dígitos), se devuelve tal cual — no se
-    inventa formato sobre algo que no se reconoce con certeza. Pedido
-    explícito 2026-08-05."""
+    LETRA-12345678-9. Si su forma no coincide con el patrón esperado
+    (letra + 9 dígitos, guiones/espacios aparte), se devuelve tal cual —
+    no se inventa formato sobre algo que no se reconoce con certeza.
+    Pedido explícito 2026-08-05.
+
+    Bug real encontrado 2026-09-15: un RIF con SOLO el primer guión
+    puesto (ej. 'J-306385010', le falta el guión antes del dígito
+    verificador) quedaba sin corregir -- la versión anterior devolvía
+    tal cual cualquier valor que ya tuviera UN guión, asumiendo que eso
+    significaba "ya está bien formateado". Ahora se limpian los guiones/
+    espacios existentes ANTES de aplicar el patrón, así que reformatea
+    correctamente sin importar si el guión que ya trae está en la
+    posición correcta, ausente, o sobra -- idempotente sobre un RIF que
+    ya está bien formateado (limpiarlo y reconstruirlo da el mismo
+    resultado)."""
     limpio = (rif or '').upper().strip()
-    if not limpio or '-' in limpio:
+    if not limpio:
         return limpio
-    m = re.match(r'^([VEJPG])(\d{9})$', limpio)
+    sin_guion = limpio.replace('-', '').replace(' ', '')
+    m = re.match(r'^([VEJPG])(\d{9})$', sin_guion)
     if not m:
         return limpio
     letra, digitos = m.groups()
@@ -1309,7 +1321,21 @@ class VeConectaCargaVentas(models.Model):
              ('company_ids', 'in', [self.company_id.id])], limit=1)
 
         creadas = 0
+        # Desglose de `creadas` por tipo de transacción SENIAT (01 Factura
+        # Regular -- se deriva como creadas - creadas_nd - creadas_nc, 02
+        # Nota de Débito, 03 Nota de Crédito) -- pedido explícito 2026-09-15
+        # para que la ND deje de quedar invisible, mezclada dentro de
+        # "Facturas creadas" sin ninguna fila propia (a diferencia de la
+        # NC, que sí la tenía).
+        creadas_nd = 0
+        creadas_nc = 0
         errores = []
+        # Notas informativas (NO son errores -- ej. una NC que se creó y
+        # posteó bien pero no había retención previa que ajustar porque la
+        # factura original nunca tuvo una) -- pedido explícito 2026-09-15,
+        # separado de `errores` para que "Filas con error" quede reservado
+        # a fallos reales que sí requieren revisión manual.
+        notas_informativas = []
         # (wh_id, monto_retenido del feed en esa fila) por cada retención
         # creada en esta carga — el bucket final (Confirmado vs No
         # Recibido/Vencido) se calcula DESPUÉS de todo el procesamiento
@@ -1462,6 +1488,7 @@ class VeConectaCargaVentas(models.Model):
                             nc.action_post()
                         linea.invoice_id = nc.id
                         creadas += 1
+                        creadas_nc += 1
 
                         # Paso 4 (2026-09-03) — ajustar la retención de la
                         # factura que esta NC revierte (el gap real, ver
@@ -1562,11 +1589,18 @@ class VeConectaCargaVentas(models.Model):
                                     f'ya_declarada={ya_declarada}) no calzó en Caso A ni '
                                     f'Caso B -- no se ajustó, requiere revisión manual.')
                         else:
-                            errores.append(
-                                f'Fila {linea.fila}: no se encontró ninguna retención '
-                                f'(ve.wh.iva) para la factura afectada '
-                                f'{factura_registro.name} (id {factura_registro.id}) -- '
-                                f'no se pudo ajustar.')
+                            # No es un error -- la Nota de Crédito ya se creó y
+                            # posteó bien arriba (creadas += 1 ya pasó). Solo
+                            # significa que la factura original nunca tuvo una
+                            # retención (ve.wh.iva) que ajustar -- caso legítimo,
+                            # no una falla. Separado de `errores` 2026-09-15 (ver
+                            # Pendiente #2 en memoria) para no mezclarlo con
+                            # fallos reales bajo "Filas con error".
+                            notas_informativas.append(
+                                f'Fila {linea.fila}: Nota de Crédito {nc.name} creada '
+                                f'-- la factura afectada {factura_registro.name} (id '
+                                f'{factura_registro.id}) nunca tuvo una retención '
+                                f'(ve.wh.iva) que ajustar.')
 
                         # Bug real encontrado 2026-08-20 (orden corregido
                         # 2026-09-04): esta rama nunca revisaba si el hook
@@ -1749,6 +1783,7 @@ class VeConectaCargaVentas(models.Model):
                         nc.action_post()
                     linea.invoice_id = nc.id
                     creadas += 1
+                    creadas_nc += 1
 
                     # Tratamiento de la retención de la factura afectada --
                     # PARCIAL: a diferencia del neteo exacto (que anula el
@@ -1869,11 +1904,16 @@ class VeConectaCargaVentas(models.Model):
                                 f'ya_declarada={ya_declarada}) no calzó en Caso A ni '
                                 f'Caso B -- no se ajustó, requiere revisión manual.')
                     else:
-                        errores.append(
-                            f'Fila {linea.fila}: no se encontró ninguna retención '
-                            f'(ve.wh.iva) para la factura afectada '
-                            f'{factura_afectada.name} (id {factura_afectada.id}) -- '
-                            f'no se pudo ajustar.')
+                        # No es un error -- ver el comentario gemelo en el
+                        # camino de NC total (Registro+Anulación) más arriba
+                        # en este archivo. Mismo caso: la NC parcial ya se
+                        # creó y posteó bien, solo no había retención previa
+                        # que ajustar.
+                        notas_informativas.append(
+                            f'Fila {linea.fila}: Nota de Crédito parcial {nc.name} '
+                            f'creada -- la factura afectada {factura_afectada.name} '
+                            f'(id {factura_afectada.id}) nunca tuvo una retención '
+                            f'(ve.wh.iva) que ajustar.')
 
                     # Bug real (mismo patrón del camino "Registro+Anulación"
                     # arriba en este archivo, ver ese comentario para el
@@ -1951,7 +1991,15 @@ class VeConectaCargaVentas(models.Model):
                 # 2026-07-24 ("se habilita DJCS al ir a Cliente>Factura").
                 vals_partner = {
                     'name': linea.nombre_cliente or linea.rif,
-                    'vat': linea.rif,
+                    # _formatear_rif() en vez del valor crudo -- sin esto,
+                    # un RIF con guión a medias (ej. "J-306385010", ver fix
+                    # 2026-09-15 en esa función) quedaba guardado mal desde
+                    # la creación misma del partner, y _validar_para_confirmar
+                    # (ve_wh_iva.py) rechazaba "recibir" la retención con
+                    # "RIF no tiene el formato correcto" -- la autocorrección
+                    # de la rama `else` (partner ya existente) solo ayudaba
+                    # en una carga SIGUIENTE, no en la primera.
+                    'vat': _formatear_rif(linea.rif) if linea.rif else linea.rif,
                     'company_type': 'company',
                     'company_id': self.company_id.id,
                     'customer_rank': 1,
@@ -2084,6 +2132,8 @@ class VeConectaCargaVentas(models.Model):
                     inv.action_post()
                 linea.invoice_id = inv.id
                 creadas += 1
+                if linea.tipo_transaccion == '02':
+                    creadas_nd += 1
             except Exception as exc:
                 errores.append(f'Fila {linea.fila}: {exc}')
                 # Persistir la categoría acá mismo (no alcanza con dejar que
@@ -2350,11 +2400,24 @@ class VeConectaCargaVentas(models.Model):
         # simplemente no ha llegado el papel.
         BUCKET_ORDEN = ['confirmado', 'retenido_s_comprobante', 'recibido_dif',
                         'no_recibido', 'anulado']
+        # Etiquetas reescritas 2026-09-15 (pedido explícito, tras una
+        # auditoría manual larga fila por fila) para que cada una diga QUÉ
+        # columna del archivo la decide -- antes había que reconstruir la
+        # lógica de _bucket_de() para saber que "sin comprobante" se
+        # refiere a la columna "Comprobante de Retención" del Excel (no al
+        # Buzón/OCR), y que "No Recibido" vs. "Retenido s/Comprobante" se
+        # decide por Base Imponible = 0 (no por la columna IVA Retenido).
         BUCKET_LABEL = {
-            'confirmado': 'Confirmado (comprobante y monto coinciden con SmartIVA)',
-            'retenido_s_comprobante': 'Retenido s/Comprobante (monto calculado, aún sin comprobante)',
-            'recibido_dif': 'Recibido c/Dif (comprobante llegó, monto no coincide, pendiente de revisar)',
-            'no_recibido': 'No Recibido (factura 100% exenta, monto retenido = 0)',
+            'confirmado': 'Confirmado (archivo trae N° Comprobante y el monto coincide)',
+            'retenido_s_comprobante': (
+                'Retenido s/Comprobante (archivo NO trae N° Comprobante; '
+                'Base Imponible > 0)'),
+            'recibido_dif': (
+                'Recibido c/Dif (archivo trae N° Comprobante, pero el monto '
+                'NO coincide — revisar)'),
+            'no_recibido': (
+                'No Recibido (archivo NO trae N° Comprobante; factura 100% '
+                'exenta, Base Imponible = 0)'),
             'anulado': 'Anulado',
         }
 
@@ -2368,9 +2431,21 @@ class VeConectaCargaVentas(models.Model):
                 return 'anulado'
             return 'no_recibido' if abs(wh.monto_retenido) < 0.01 else 'retenido_s_comprobante'
 
+        # 'n_archivo' (2026-09-15, pedido explícito) -- cuenta cuántas de
+        # las filas de este bucket el ARCHIVO mismo ya reportaba con un
+        # monto retenido distinto de 0, aparte de 'n' (cuántas retuvo
+        # SmartIVA en total). Antes "Cant. Archivo" siempre repetía el
+        # mismo valor que "Cant. SmartIVA" (slot['n']) en todas las filas
+        # -- parecía una comparación real pero no comparaba nada. La
+        # diferencia real aparece sobre todo en "Retenido s/Comprobante":
+        # SmartIVA calcula (Base x Alícuota x % retención) en TODAS las
+        # facturas de un cliente Agente, tenga o no esa fila su propio
+        # monto en el archivo -- un cliente Agente puede traer la columna
+        # IVA Retenido en 0 en la mayoría de sus filas y aun así generar
+        # retención real en todas.
         tally = {
-            True: {b: {'n': 0, 'archivo': 0.0, 'smartiva': 0.0} for b in BUCKET_ORDEN},
-            False: {b: {'n': 0, 'archivo': 0.0, 'smartiva': 0.0} for b in BUCKET_ORDEN},
+            True: {b: {'n': 0, 'n_archivo': 0, 'archivo': 0.0, 'smartiva': 0.0} for b in BUCKET_ORDEN},
+            False: {b: {'n': 0, 'n_archivo': 0, 'archivo': 0.0, 'smartiva': 0.0} for b in BUCKET_ORDEN},
         }
         # A2 (2026-09-09) -- AJUSTE-NC-... aparte, nunca entra al tally
         # normal (Con/Sin N° de Control) -- caía en "Sin N° de Control
@@ -2378,6 +2453,7 @@ class VeConectaCargaVentas(models.Model):
         # nada que ver con un ajuste de NC, solo coincidía en que ambos
         # no traen N° de Control.
         nc_ajuste_n = 0
+        nc_ajuste_n_archivo = 0
         nc_ajuste_feed = 0.0
         nc_ajuste_smartiva = 0.0
         if wh_tracking:
@@ -2386,12 +2462,16 @@ class VeConectaCargaVentas(models.Model):
                 wh = whs_finales[wh_id]
                 if wh_id in nc_ajuste_wh_ids:
                     nc_ajuste_n += 1
+                    if abs(monto_feed) > 0.01:
+                        nc_ajuste_n_archivo += 1
                     nc_ajuste_feed += monto_feed
                     nc_ajuste_smartiva += wh.monto_retenido
                     continue
                 con_control = bool(wh.nro_control)
                 slot = tally[con_control][_bucket_de(wh)]
                 slot['n'] += 1
+                if abs(monto_feed) > 0.01:
+                    slot['n_archivo'] += 1
                 slot['archivo'] += monto_feed
                 slot['smartiva'] += wh.monto_retenido
                 # Bug real encontrado 2026-08-05 (Cementos, carga histórica
@@ -2415,9 +2495,11 @@ class VeConectaCargaVentas(models.Model):
                         b['confirmadas'] += 1
 
         con_control_n = sum(tally[True][b]['n'] for b in BUCKET_ORDEN)
+        con_control_n_archivo = sum(tally[True][b]['n_archivo'] for b in BUCKET_ORDEN)
         con_control_feed = sum(tally[True][b]['archivo'] for b in BUCKET_ORDEN)
         con_control_smartiva = sum(tally[True][b]['smartiva'] for b in BUCKET_ORDEN)
         sin_control_n = sum(tally[False][b]['n'] for b in BUCKET_ORDEN)
+        sin_control_n_archivo = sum(tally[False][b]['n_archivo'] for b in BUCKET_ORDEN)
         sin_control_feed = sum(tally[False][b]['archivo'] for b in BUCKET_ORDEN)
         sin_control_smartiva = sum(tally[False][b]['smartiva'] for b in BUCKET_ORDEN)
 
@@ -2498,16 +2580,11 @@ class VeConectaCargaVentas(models.Model):
             bucket['base'] += linea.base_16 + linea.base_8 + linea.base_exento
         rechazadas = len(rechazadas_lineas)
 
-        # CHEQUEO contra Filas Leídas (universo completo del archivo):
-        # Retenciones Generadas (Tabla 2) + Sin Retención + Rechazadas debe
-        # sumar Filas Leídas -- pedido explícito.
         total_filas = len(self.linea_ids)
-        no_generadas = sin_retencion + rechazadas + nc_ajustadas
-        suma_cuadra = (retenciones_creadas + no_generadas) == total_filas
 
-        # ══ Tabla 1 — Facturas ══════════════════════════════════════════
-        # Nivel factura: creación + rechazo + sin retención, con Base
-        # Imponible Archivo/SmartIVA/Diferencia en "Facturas creadas"
+        # ══ Tabla 1 — Filas Leídas → Resultado ═══════════════════════════
+        # Nivel fila: creación (por tipo SENIAT) o rechazo, con Base
+        # Imponible Archivo/SmartIVA/Diferencia en "Facturas/NC creadas"
         # (antes vivía en una tabla aparte "Montos: Archivo vs. Odoo") --
         # pedido explícito 2026-08-28, para no tener que saltar de tabla
         # para ver ese cuadre.
@@ -2552,40 +2629,86 @@ class VeConectaCargaVentas(models.Model):
                 f'<span style="color:#dc3545;">Rechazada — {etiqueta}</span>',
                 _n(b['n']), _m(b['base']))
 
-        base_no_generadas = (base_agente_true + base_agente_false + base_nc_ajustadas
-                              + sum(b['base'] for b in rechazadas_por_categoria.values()))
+        # Split 2026-09-15 (pedido explícito) -- esta tabla mezclaba 2 ejes
+        # distintos en una sola lista con un solo TOTAL, lo que hacía
+        # confusas las filas "Sin Retención..." (pertenecen al eje de
+        # "¿la factura ya creada generó retención?", no al de "¿qué pasó
+        # con esta fila leída?"). Ahora Tabla 1 solo resuelve el eje 1
+        # (Filas Leídas -> creó algo o se rechazó) y Tabla 2 (antes
+        # "Tabla 2 — Retenciones", renumerada a Tabla 3 más abajo) resuelve
+        # el eje 2 (de las Facturas/NC creadas, ¿generaron retención?).
+        creadas_regular = creadas - creadas_nd - creadas_nc
+        rechazadas_base_total = sum(b['base'] for b in rechazadas_por_categoria.values())
         tabla_1_facturas = (
             f'<table style="border-collapse:collapse; font-size:0.85rem;">'
             f'<tr><th {th}>Concepto</th><th {th}>Cantidad</th>'
-            f'<th {th}>Base Imponible (Archivo)</th><th {th}>Base Imponible (SmartIVA)</th>'
+            f'<th {th}>Base Imponible (Archivo, incl. No Gravadas)</th>'
+            f'<th {th}>Base Imponible (SmartIVA)</th>'
             f'<th {th}>Diferencia</th></tr>'
             + _fila1('Filas leídas', _n(total_filas))
-            + _fila1('Facturas creadas', _n(creadas), _m(base_archivo_tot), _m(base_odoo_tot),
+            + _fila1('<b>Facturas/NC creadas</b>', _n(creadas), _m(base_archivo_tot), _m(base_odoo_tot),
                      _m(dif_base) if abs(dif_base) > 0.01 else 'cuadra',
                      color='#dc3545' if abs(dif_base) > 0.01 else '#198754')
-            + _fila1('Notas de Crédito — ajustaron la retención de la factura original '
-                     '(no generan retención propia)', _n(nc_ajustadas), _m(base_nc_ajustadas))
+            + _fila1('<span style="padding-left:24px;">Facturas Regulares (Tipo 01)</span>',
+                     _n(creadas_regular))
+            + _fila1('<span style="padding-left:24px;">Notas de Débito (Tipo 02)</span>',
+                     _n(creadas_nd))
+            + _fila1('<span style="padding-left:24px;">Notas de Crédito (Tipo 03)</span>',
+                     _n(creadas_nc))
             + filas_rechazadas_html
-            + _fila1('Sin Retención — Cliente NO es Agente de Retención (no le correspondía retener)',
-                     _n(sin_ret_agente_false), _m(base_agente_false))
-            + _fila1('<span style="color:#dc3545;">Sin Retención — Cliente SÍ es Agente de '
-                     'Retención pero no se generó (revisar)</span>',
-                     _n(sin_ret_agente_true), _m(base_agente_true))
+            + (f'<tr><td {td}><b>Rechazadas (total)</b></td><td {tdr}><b>{_n(rechazadas)}</b></td>'
+               f'<td {tdr}><b>{_m(rechazadas_base_total)}</b></td><td {tdr}>—</td><td {tdr}>—</td></tr>'
+               if rechazadas else '')
             + f'<tr style="font-weight:700; border-top:2px solid #999;">'
-              f'<td {td}>TOTAL Rechazadas + Sin Retención + NC Ajustadas</td>'
-              f'<td {tdr}>{_n(no_generadas)}</td>'
-              f'<td {tdr}>{_m(base_no_generadas)}</td><td {tdr}>—</td><td {tdr}>—</td></tr>'
+              f'<td {td}>TOTAL = Filas Leídas</td>'
+              f'<td {tdr}>{_n(creadas + rechazadas)}</td>'
+              f'<td {tdr}>—</td><td {tdr}>—</td><td {tdr}>—</td></tr>'
             + '</table>'
-            + f'<p style="font-size:0.75rem; color:#666;">CHEQUEO: Retenciones Generadas '
-              f'(Tabla 2: {_n(retenciones_creadas)}) + Sin Retención '
-              f'({_n(sin_retencion)}) + NC Ajustadas ({_n(nc_ajustadas)}) + Rechazadas '
-              f'({_n(rechazadas)}) = '
-              f'<span style="color:{"#198754" if suma_cuadra else "#dc3545"};">'
-              f'{_n(retenciones_creadas + no_generadas)}</span> '
-              f'— debe cuadrar con Filas Leídas ({_n(total_filas)})</p>'
         )
 
-        # ══ Tabla 2 — Retenciones ═══════════════════════════════════════
+        # ══ Tabla 2 — Facturas Creadas → ¿Generó Retención? ══════════════
+        # Eje 2 (ver comentario arriba): de las Facturas/NC creadas (Tabla
+        # 1), cuántas generaron retención (ve.wh.iva) y por qué las que no.
+        # Solo 3 columnas (sin "Base SmartIVA"/"Diferencia") -- pedido
+        # explícito 2026-09-15: esta tabla no tiene un valor "SmartIVA"
+        # real que comparar por categoría (la reconciliación Archivo-vs-
+        # Odoo de la Base Imponible ya se resuelve completa en Tabla 1);
+        # mostrar esas 2 columnas siempre en "—" quedaba confuso, como si
+        # faltara un dato en vez de simplemente no aplicar.
+        def _fila2b(concepto, cant, base='—', bold=False):
+            estilo = ' style="font-weight:700; border-top:2px solid #999;"' if bold else ''
+            return (f'<tr{estilo}><td {td}>{concepto}</td>'
+                    f'<td {tdr}>{cant}</td><td {tdr}>{base}</td></tr>')
+
+        suma_cuadra_t2 = (retenciones_creadas + sin_retencion + nc_ajustadas) == creadas
+        base_tabla2_total = base_agente_true + base_agente_false + base_nc_ajustadas
+        tabla_2_facturas_retencion = (
+            f'<table style="border-collapse:collapse; font-size:0.85rem;">'
+            f'<tr><th {th}>Concepto</th><th {th}>Cantidad</th>'
+            f'<th {th}>Base Imponible (Archivo, incl. No Gravadas)</th></tr>'
+            + _fila2b('Con retención generada', _n(retenciones_creadas))
+            + _fila2b('Notas de Crédito — ajustaron la retención de la factura original '
+                      '(no generan retención propia)', _n(nc_ajustadas), _m(base_nc_ajustadas))
+            + _fila2b('Sin retención — Cliente NO es Agente de Retención '
+                      '(retención no aplicable)',
+                      _n(sin_ret_agente_false), _m(base_agente_false))
+            + _fila2b('<span style="color:#dc3545;">Sin retención — Cliente SÍ es Agente de '
+                      'Retención, sin generar (revisar)</span>',
+                      _n(sin_ret_agente_true), _m(base_agente_true))
+            + _fila2b(
+                'TOTAL = Facturas/NC Creadas',
+                f'<span style="color:{"#198754" if suma_cuadra_t2 else "#dc3545"};">'
+                f'{_n(retenciones_creadas + sin_retencion + nc_ajustadas)}</span>',
+                _m(base_tabla2_total), bold=True)
+            + '</table>'
+            + (f'<p style="font-size:0.75rem; color:#666;">CHEQUEO: debe cuadrar con '
+               f'"Facturas/NC creadas" de Tabla 1 ({_n(creadas)}).</p>'
+               if not suma_cuadra_t2 else '')
+        )
+
+        # ══ Tabla 3 — Retenciones ═══════════════════════════════════════
+        # Renumerada de Tabla 2 a Tabla 3 el 2026-09-15 -- ver el split de
+        # Tabla 1/2 más arriba.
         # Todo el desglose de retenciones + todas las diferencias en un
         # solo lugar (antes repartido entre "Consistencia", "Estado
         # Actual" y parte de "Montos: Archivo vs. Odoo") -- pedido
@@ -2621,7 +2744,7 @@ class VeConectaCargaVentas(models.Model):
                 continue
             dif_txt, color = _dif_o_cuadra(slot['archivo'], slot['smartiva'])
             filas_con_control += _fila2(
-                BUCKET_LABEL[b], _n(slot['n']), _n(slot['n']),
+                BUCKET_LABEL[b], _n(slot['n_archivo']), _n(slot['n']),
                 _m(slot['archivo']), _m(slot['smartiva']), dif_txt, color=color, indent=True)
 
         dif_con_txt, dif_con_color = _dif_o_cuadra(con_control_feed, con_control_smartiva)
@@ -2629,29 +2752,42 @@ class VeConectaCargaVentas(models.Model):
         dif_nc_txt, dif_nc_color = _dif_o_cuadra(nc_ajuste_feed, nc_ajuste_smartiva)
         fila_nc_ajuste = (
             _fila2('Notas de Crédito — Ajuste (AJUSTE-NC-..., Caso B — factura ya declarada)',
-                   _n(nc_ajuste_n), _n(nc_ajuste_n), _m(nc_ajuste_feed), _m(nc_ajuste_smartiva),
+                   _n(nc_ajuste_n_archivo), _n(nc_ajuste_n), _m(nc_ajuste_feed), _m(nc_ajuste_smartiva),
                    dif_nc_txt, color=dif_nc_color)
             if nc_ajuste_n else '')
 
-        tabla_2_retenciones = (
+        tabla_3_retenciones = (
+            f'<p style="font-size:0.75rem; color:#666;">Cada retención se clasifica en 2 '
+            f'pasos: (1) ¿el archivo trae N° de Comprobante de Retención? (2) si sí, ¿el '
+            f'monto coincide con lo que SmartIVA calculó? Si NO trae comprobante, se mira '
+            f'si la factura es 100% exenta (Base Imponible = 0). '
+            f'<b>Cant. Archivo</b> = cuántas de esas filas el archivo mismo reporta con un '
+            f'monto retenido ≠ 0; <b>Cant. SmartIVA</b> = cuántas retuvo SmartIVA en total -- '
+            f'pueden diferir porque SmartIVA calcula la retención (Base × Alícuota × % '
+            f'retención) en TODAS las facturas de un cliente Agente, así el archivo reporte '
+            f'0 en algunas.</p>'
             f'<table style="border-collapse:collapse; font-size:0.85rem;">'
             f'<tr><th {th}>Concepto</th><th {th}>Cant. Archivo</th><th {th}>Cant. SmartIVA</th>'
             f'<th {th}>Monto Archivo</th><th {th}>Monto SmartIVA</th><th {th}>Diferencia</th></tr>'
-            + _fila2('Retenciones generadas en SmartIVA (total)', _n(retenciones_creadas),
+            + _fila2('Retenciones — Total',
+                     _n(con_control_n_archivo + sin_control_n_archivo + nc_ajuste_n_archivo),
                      _n(retenciones_creadas), '—', _m(retenido_smartiva_tot), '—', bold=True)
-            + _fila2('<b>Con N° de Control</b>', _n(con_control_n), _n(con_control_n),
+            + _fila2('<b>Con N° de Control</b>', _n(con_control_n_archivo), _n(con_control_n),
                      _m(con_control_feed), _m(con_control_smartiva), dif_con_txt, color=dif_con_color)
             + filas_con_control
             + _fila2('Sin N° de Control (forzada al 100%, regla legal SPE)',
-                     _n(sin_control_n), _n(sin_control_n),
+                     _n(sin_control_n_archivo), _n(sin_control_n),
                      _m(sin_control_feed), _m(sin_control_smartiva), dif_sin_txt, color=dif_sin_color)
             + fila_nc_ajuste
             + _fila2('Sin Retención Generada (archivo trae monto, SmartIVA no generó '
-                     'retención — ver Tabla 1 por el motivo)',
+                     'retención — ver Tabla 2 por el motivo)',
                      _n(sin_ret_con_monto_n), _n(0), _m(sin_ret_con_monto_archivo), _m(0.0),
                      _m(-sin_ret_con_monto_archivo) if sin_ret_con_monto_archivo else 'cuadra',
                      color='#dc3545' if sin_ret_con_monto_archivo else '#198754')
-            + _fila2('TOTALES', _n(retenciones_creadas + sin_ret_con_monto_n), _n(retenciones_creadas),
+            + _fila2('TOTALES',
+                     _n(con_control_n_archivo + sin_control_n_archivo + nc_ajuste_n_archivo
+                        + sin_ret_con_monto_n),
+                     _n(retenciones_creadas),
                      _m(retenido_archivo_tot), _m(retenido_smartiva_tot), dif_tot_txt,
                      color=dif_tot_color, bold=True)
             + '</table>'
@@ -2721,10 +2857,16 @@ class VeConectaCargaVentas(models.Model):
             + (f'<b>Filas bloqueadas pendientes (sin procesar, ver "Ver '
                f'Duplicadas (Revisar)"):</b> {len(bloqueadas)}<br/>' if bloqueadas else '')
             + '<br/>'
-            f'<b>— Tabla 1: Facturas —</b><br/>{tabla_1_facturas}<br/>'
-            f'<b>— Tabla 2: Retenciones —</b><br/>{tabla_2_retenciones}<br/>'
-            + (f'<b>— Consistencia por Zona —</b><br/>{tabla_zona}<br/>' if hay_zonas else '')
+            f'<b>— Tabla 1: Filas Leídas → Resultado —</b><br/>{tabla_1_facturas}<br/>'
+            f'<b>— Tabla 2: Facturas Creadas → ¿Generó Retención? —</b><br/>'
+            f'{tabla_2_facturas_retencion}<br/>'
+            f'<b>— Tabla 3: Retenciones —</b><br/>{tabla_3_retenciones}<br/>'
+            # Consistencia por Zona oculta 2026-09-15 (pedido explícito) --
+            # pendiente de revisar aparte, no se borró el cálculo de arriba.
         )
+        if notas_informativas:
+            cuerpo += ('<br/><b>Notas (no requieren acción):</b><br/>'
+                       + '<br/>'.join(notas_informativas))
         if errores:
             cuerpo += '<br/><b>Filas con error:</b><br/>' + '<br/>'.join(errores)
         self.message_post(body=Markup(cuerpo), message_type='comment', subtype_xmlid='mail.mt_note')
@@ -3337,6 +3479,18 @@ class VeConectaCargaVentasLinea(models.Model):
         Partner = self.env['res.partner']
         Move = self.env['account.move']
         WhIva = self.env['ve.wh.iva']
+        # Caché por compañía (2026-09-16, pedido explícito -- "la
+        # previsualización cada vez toma más tiempo"): antes esta búsqueda
+        # de TODOS los contactos con RIF corría DENTRO del loop, una vez
+        # POR FILA -- O(líneas x total_partners_con_vat). Como
+        # total_partners crece cada mes (más clientes creados), cada carga
+        # nueva se ponía más lenta que la anterior aunque el archivo mismo
+        # no creciera. Se calcula una sola vez por compañía y se indexa por
+        # RIF normalizado -- misma búsqueda de siempre, solo que UNA vez en
+        # vez de N. Mismo criterio de desempate ([:1] = el primero que
+        # encuentre search(), primero en `cache` gana con setdefault).
+        partners_cache_por_company = {}
+        journal_venta_cache_por_company = {}
         for linea in self:
             categoria_previa = linea.categoria_discrepancia
             company = linea.carga_id.company_id
@@ -3352,11 +3506,16 @@ class VeConectaCargaVentasLinea(models.Model):
                 # existente si el formato del RIF en el archivo no coincidía
                 # letra por letra con el guardado, y lo creaba duplicado.
                 rif_norm = _norm_rif(linea.rif)
-                candidatos = Partner.search([
-                    ('vat', '!=', False),
-                    '|', ('company_id', '=', False), ('company_id', '=', company.id),
-                ])
-                partner = candidatos.filtered(lambda p: _norm_rif(p.vat) == rif_norm)[:1]
+                if company.id not in partners_cache_por_company:
+                    candidatos = Partner.search([
+                        ('vat', '!=', False),
+                        '|', ('company_id', '=', False), ('company_id', '=', company.id),
+                    ])
+                    cache = {}
+                    for p in candidatos:
+                        cache.setdefault(_norm_rif(p.vat), p)
+                    partners_cache_por_company[company.id] = cache
+                partner = partners_cache_por_company[company.id].get(rif_norm, Partner.browse())
             linea.partner_id = partner
             linea.es_partner_nuevo = bool(linea.rif) and not partner
 
@@ -3417,9 +3576,11 @@ class VeConectaCargaVentasLinea(models.Model):
             # las rechazó una por una contra la restricción de Postgres
             # (nombre de factura único por diario) sin que se viera la razón
             # real hasta revisar "Filas con error" (y ahí se truncaba a 10).
-            journal_venta = self.env['account.journal'].sudo().search(
-                [('type', '=', 'sale'), ('company_id', '=', company.id)],
-                limit=1) if company else False
+            if company.id not in journal_venta_cache_por_company:
+                journal_venta_cache_por_company[company.id] = self.env['account.journal'].sudo().search(
+                    [('type', '=', 'sale'), ('company_id', '=', company.id)],
+                    limit=1) if company else False
+            journal_venta = journal_venta_cache_por_company[company.id]
             # Diario de Zona (2026-08-14, fix Causa C definitivo -- ver
             # _journal_zona): una factura nueva de esta fila iría a este
             # diario (el de su Zona, o el compartido si no trae Zona).
